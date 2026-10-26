@@ -89,7 +89,7 @@ install_test_suite() {
 		svn co --quiet "--ignore-externals" "https://develop.svn.wordpress.org/${WP_TESTS_TAG}/tests/phpunit/data/" "$WP_TESTS_DIR/data"
 	fi
 
-	if [ ! -f wp-tests-config.php ]; then
+	if [ ! -f "$WP_TESTS_DIR/wp-tests-config.php" ]; then
 		download "https://develop.svn.wordpress.org/${WP_TESTS_TAG}/wp-tests-config-sample.php" "$WP_TESTS_DIR/wp-tests-config.php"
 		WP_CORE_DIR_ESC=$(echo "$WP_CORE_DIR" | sed 's:/\+$::')
 		sed -i "s:dirname( __FILE__ ) . '/src/':'$WP_CORE_DIR_ESC/':" "$WP_TESTS_DIR/wp-tests-config.php"

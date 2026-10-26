@@ -13,12 +13,6 @@ if ( file_exists( $vendor ) ) {
 	require_once $vendor;
 }
 
-if ( ! defined( 'ABSPATH' ) ) {
-	define( 'ABSPATH', sys_get_temp_dir() . '/oli-dp-abspath/' );
-}
-
-require_once dirname( __DIR__, 2 ) . '/includes/class-oli-dp-utils.php';
-
 $tests_dir = getenv( 'WP_TESTS_DIR' );
 if ( ! $tests_dir ) {
 	$tests_dir = rtrim( sys_get_temp_dir(), '/\\' ) . '/wordpress-tests-lib';
@@ -37,6 +31,13 @@ if ( file_exists( $tests_dir . '/includes/functions.php' ) ) {
 	);
 
 	require $tests_dir . '/includes/bootstrap.php';
-} else {
-	define( 'OLIDP_HAS_WP_TESTS', false );
+	return;
 }
+
+define( 'OLIDP_HAS_WP_TESTS', false );
+
+if ( ! defined( 'ABSPATH' ) ) {
+	define( 'ABSPATH', sys_get_temp_dir() . '/oli-dp-abspath/' );
+}
+
+require_once dirname( __DIR__, 2 ) . '/includes/class-oli-dp-utils.php';

@@ -68,7 +68,7 @@ jobs:
     - name: Run PHPCS
       run: |
         set -o pipefail
-        vendor/bin/phpcs -q --standard=WordPress-Extra --report=checkstyle | cs2pr
+        vendor/bin/phpcs -q --report=checkstyle | cs2pr
 
   phpunit:
     name: PHPUnit
@@ -121,15 +121,17 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Build installable plugin
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq zip unzip
+        bash bin/build-zip.sh
+        rm -rf plugin-export
+        unzip -q artifacts/oli-duplicate-post.zip -d plugin-export
+
     - name: Run Plugin Check
       uses: wordpress/plugin-check-action@v1
       with:
-        build-dir: './'
+        build-dir: './plugin-export/oli-duplicate-post'
         slug: oli-duplicate-post
-        exclude-directories: |
-          tests
-          vendor
-          artifacts
-          .github
-          bin
         include-experimental: false
