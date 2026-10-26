@@ -345,16 +345,19 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 		$method  = new ReflectionMethod( 'Oli_DP_Admin_Bar', 'get_current_post' );
 		$method->setAccessible( true );
 
+		set_current_screen( 'edit-post' );
 		$pagenow      = 'edit.php';
 		$_GET['post'] = $post_id;
 		$this->assertNull( $method->invoke( null ) );
 
+		set_current_screen( 'post' );
 		$pagenow = 'post.php';
 		$post    = $method->invoke( null );
 		$this->assertInstanceOf( WP_Post::class, $post );
 		$this->assertSame( $post_id, (int) $post->ID );
 
 		unset( $_GET['post'] );
+		set_current_screen( 'front' );
 	}
 
 	public function test_bulk_actions_include_clone_and_rewrite() {

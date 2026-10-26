@@ -127,8 +127,10 @@ class Oli_DP_Utils {
 			$value = wp_check_invalid_utf8( $value );
 		}
 
-		if ( function_exists( 'wp_strip_all_tags' ) ) {
-			$value = wp_strip_all_tags( $value );
+		// wp_strip_all_tags() and sanitize_text_field() both trim. wp_kses()
+		// strips markup while keeping leading and trailing spaces.
+		if ( function_exists( 'wp_kses' ) ) {
+			$value = wp_kses( $value, array() );
 		} else {
 			$value = strip_tags( $value ); // phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags
 		}
