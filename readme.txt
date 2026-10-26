@@ -4,65 +4,62 @@ Tags: duplicate, clone, copy, post, page
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.1.2
+Stable tag: 1.0.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Clone posts, pages, and custom post types with Clone, New Draft, and Rewrite & Republish features.
+Clone posts, pages, and custom post types with Clone, New Draft, and Rewrite & Republish.
 
 == Description ==
 
-Oli Duplicate Post makes it easy to duplicate posts, pages, and custom post types in WordPress. With three different duplication modes and extensive customization options, you have complete control over how your content is duplicated.
+Oli Duplicate Post duplicates posts, pages, and custom post types. Use Clone for a same-list copy, New Draft to open an editable draft, or Rewrite & Republish to edit a copy and merge it back into the live original.
+
+Author: Olivier Bigras
+Author URI: https://github.com/olivierbigras
+Contact: oli@olivierbigras.com
 
 = Features =
 
-* **Three Duplication Modes:**
-  * **Clone** - Create an exact copy with all settings
-  * **New Draft** - Create a draft copy for further editing
-  * **Rewrite & Republish** - Edit a copy of a published post and merge it back on publish
+* **Three duplication modes**
+  * **Clone** — create a copy and stay on the list table
+  * **New Draft** — create a draft and open it for editing
+  * **Rewrite & Republish** — edit a copy of a published post and merge it back on publish, including scheduled republish
 
-* **Multiple Access Points:**
-  * Row actions in post list
-  * Bulk actions for multiple posts
-  * Admin bar menu
-  * Edit screen meta box
-  * Block editor and classic editor support
+* **Access points**
+  * Row actions in the post list
+  * Bulk Clone and New Draft
+  * Admin bar (admin and front-end singular views)
+  * Classic editor meta box
+  * Block editor sidebar panel and Options menu
 
-* **Comprehensive Copying Options:**
-  * Title (with customizable prefix/suffix)
-  * Content, excerpt, and featured image
-  * Meta fields and taxonomies
-  * Post format and template
-  * Author, date, status, and slug
-  * Attachments and child posts (optional)
-  * Comments (optional)
-  * Full WooCommerce product support
+* **What you can copy**
+  * Title (with prefix and suffix), date, status, slug, excerpt, content
+  * Featured image, template, format, author, password, menu order
+  * Attachments, child posts, and comments
+  * Post meta and taxonomies, with exclusion lists
 
-* **Advanced Settings:**
-  * Choose what to copy for each duplication
-  * Exclude specific meta fields (with wildcard support)
-  * Exclude specific taxonomies
-  * Enable/disable for specific post types
-  * Restrict access by user role
-  * Customize UI locations
+* **Permissions**
+  * Enable specific post types
+  * Restrict duplication to selected user roles
 
-* **Developer Friendly:**
+* **WooCommerce**
+  * Products can be enabled like any other post type
+  * Sales and rating stats are not copied
+  * SKUs are made unique
+  * Variations are copied with the parent product
+
+* **Developer API**
   * Template tag: `oli_dp_duplicate_post()`
-  * Extensive hooks and filters
-  * Well-documented code
+  * Actions and filters for titles, meta, taxonomies, permissions, and merge data
 
 = Rewrite & Republish =
 
-The Rewrite & Republish feature lets you create a copy of a published post, make changes to it, and then replace the original when you're ready. This is perfect for major updates to live content without taking the original post offline.
+1. Click **Rewrite & Republish** on a published post.
+2. Edit the working copy. The original stays live.
+3. Publish the copy to replace the original immediately, or schedule it. The original permalink and publish date are kept.
+4. The working copy is then removed.
 
-1. Click "Rewrite & Republish" on a published post
-2. Edit the copy as needed
-3. When you publish the copy, it automatically replaces the original
-4. The copy is deleted, and the original is updated with your changes
-
-= Template Tag =
-
-Use the template tag in your theme or plugin:
+= Template tag =
 
 `
 <?php
@@ -71,120 +68,105 @@ $new_post_id = oli_dp_duplicate_post( $post_id, 'clone' );
 `
 
 Parameters:
-* `$post_id` (int) - The post ID to duplicate
-* `$mode` (string) - 'clone', 'new_draft', or 'rewrite_republish'
-* `$args` (array) - Optional settings override
 
-= Hooks & Filters =
+* `$post_id` (int) — post to duplicate
+* `$mode` (string) — `clone`, `new_draft`, or `rewrite_republish`
+* `$args` (array) — optional settings override
 
-**Actions:**
-* `oli_dp_post_duplicated` - After a post is duplicated
-* `oli_dp_rewrite_republish_merged` - After a rewrite copy is merged
+= Hooks =
 
-**Filters:**
-* `oli_dp_pre_duplicate_post_data` - Modify post data before duplication
+**Actions**
+
+* `oli_dp_before_duplicate`
+* `oli_dp_post_duplicated`
+* `oli_dp_after_copy_meta`
+* `oli_dp_after_copy_taxonomies`
+* `oli_dp_before_rewrite_merge`
+* `oli_dp_rewrite_republish_merged`
+
+**Filters**
+
+* `oli_dp_pre_duplicate_post_data`
+* `oli_dp_duplicate_title`
+* `oli_dp_excluded_meta_keys`
+* `oli_dp_excluded_taxonomies`
+* `oli_dp_copied_meta_value`
+* `oli_dp_can_duplicate`
+* `oli_dp_enabled_post_types`
+* `oli_dp_allowed_roles`
+* `oli_dp_rewrite_merge_post_data`
+* `oli_dp_woocommerce_unique_sku`
 
 == Installation ==
 
-1. Upload the `oli-duplicate-post` folder to `/wp-content/plugins/`
-2. Activate the plugin through the 'Plugins' menu in WordPress
-3. Go to Settings > Duplicate Post to configure options
-4. Start duplicating posts from the post list or edit screen
+1. Upload the `oli-duplicate-post` folder to the `/wp-content/plugins/` directory.
+2. Activate the plugin through the Plugins screen.
+3. Open Settings → Duplicate Post to choose what to copy, which roles are allowed, and which post types are enabled.
+4. Duplicate items from the list table, admin bar, classic editor, or block editor.
 
 == Frequently Asked Questions ==
 
 = Does this work with custom post types? =
 
-Yes! You can enable duplication for any custom post type, including WooCommerce products, in the plugin settings.
+Yes. Enable any public post type, including products, on the settings screen.
 
 = Does it work with the block editor? =
 
-Yes! The plugin works with both the block editor (Gutenberg) and the classic editor.
+Yes. The plugin adds a sidebar panel and Options menu items in the block editor, and a meta box in the classic editor.
 
-= Can I exclude certain meta fields from being copied? =
+= Can I exclude meta fields or taxonomies? =
 
-Yes! In the settings, you can specify meta field keys to exclude. Wildcard patterns are supported (e.g., `_yoast_*` to exclude all Yoast meta fields).
+Yes. Settings accept comma-separated meta keys (wildcards such as `_private_*` are supported) and taxonomy names.
 
-= What's the difference between Clone and New Draft? =
+= What is the difference between Clone and New Draft? =
 
-Clone creates a copy with the same status and settings as the original. New Draft always creates a draft post regardless of the original's status.
+Clone creates a copy and returns you to the list table. New Draft always creates a draft and opens it in the editor.
 
-= Is this compatible with WooCommerce? =
+= How does Rewrite & Republish scheduling work? =
 
-Yes! The plugin fully supports WooCommerce products, including all product meta, attributes, and taxonomies.
+Scheduling the working copy leaves the original live. The merge runs only when that copy actually publishes.
 
-= Can I restrict duplication to certain user roles? =
+= Can I restrict who can duplicate? =
 
-Yes! In the settings, you can choose which user roles are allowed to duplicate posts.
+Yes. Choose the allowed roles and post types on the settings screen.
 
-= Does this copy all post relationships? =
+= How do I get support? =
 
-The plugin copies meta fields, taxonomies, featured images, and optionally attachments and child posts. Some complex plugin-specific relationships may require custom code using the provided filters.
-
-== Screenshots ==
-
-1. Row actions in post list
-2. Bulk actions for multiple posts
-3. Admin bar menu
-4. Edit screen meta box
-5. Settings page - What to copy
-6. Settings page - Post types & permissions
-7. Rewrite & Republish notice
+Email oli@olivierbigras.com or open an issue at https://github.com/olivierbigras/Oli-duplicate-post
 
 == External services ==
 
-This plugin does not call any external service. Clone, New Draft, and Rewrite & Republish run entirely on your WordPress site. No visitor or editor data is sent to olivierbigras.com, PayPal, Google, Cloudflare Turnstile, Carto, Leaflet, Google Sheets, Google Fonts, Adobe Typekit, or any other third party.
+This plugin does not call any external service. Clone, New Draft, and Rewrite & Republish run entirely on your site. No visitor or editor data is sent to a third party.
 
 == Changelog ==
 
-= 0.1.2 - 2026-10-21 =
-* Moved block editor and Quick Edit JavaScript from inline scripts into enqueued files
-* Moved admin CSS from inline styles into an enqueued stylesheet
-* Localized editor URLs and labels with wp_localize_script
-* Escaped comparison featured-image HTML with wp_kses_post
-* Added current_user_can checks on comparison and duplicate admin actions
+= 1.0.0 =
+* WordPress.org-ready release: no load_plugin_textdomain(), GPLv2 or later, unique oli_dp_ prefix
+* Featured image is now a copy setting
+* Meta is copied independently of content
+* Rewrite & Republish waits until publish for scheduled copies
+* Clone returns to the list table; New Draft opens the editor
+* WooCommerce products get unique SKUs, no sales stats, and copied variations
+* Admin notices stay on plugin-related screens
+* Developer hooks for meta, taxonomies, permissions, and merge data
+* PHPUnit unit and integration tests plus wp-env config
+* Plugin Check and PHPCS WordPress-Extra in CI
 
-= 0.1.1 - 2026-10-19 =
-* Added side-by-side comparison screen for Rewrite & Republish
-* Added "Compare changes" link in rewrite notice
-* Added block editor toolbar menu items (Options menu)
-* Enhanced block editor with sidebar panel and toolbar access
-* Added quick edit integration with "Copy to new draft" button
-* Added scheduled republish UI with meta box and publish box warnings
-* Added success notices after duplication actions (dismissible)
-* Added success notice after successful republish
-* Improved admin notices throughout the plugin
-* Improved block editor integration
-* Fixed PHPCS compliance issues
-* Fixed PHP syntax validation
+= 0.1.2 =
+* Moved block editor and Quick Edit JavaScript into enqueued files
+* Moved admin CSS into an enqueued stylesheet
 
-= 0.1.0 - 2026-10-19 =
+= 0.1.1 =
+* Comparison screen, block editor menu items, Quick Edit, scheduled republish UI
+
+= 0.1.0 =
 * Initial release
-* Clone posts, pages, and custom post types
-* Three duplication modes: Clone, New Draft, Rewrite & Republish
-* Comprehensive settings page
-* Multiple UI entry points
-* Full WooCommerce support
-* Developer hooks and filters
-* Block editor support
 
 == Upgrade Notice ==
 
-= 0.1.2 =
-Moves remaining inline JavaScript and CSS into enqueued files for WordPress.org Plugin Check.
+= 1.0.0 =
+Adds featured-image settings, scheduled Rewrite & Republish, WooCommerce handling, and WordPress.org compliance fixes.
 
-= 0.1.1 =
-Adds comparison screen, enhanced block editor integration, quick edit support, and improved admin notices.
+== Privacy ==
 
-= 0.1.0 =
-Initial release of Oli Duplicate Post.
-
-== Privacy Policy ==
-
-Oli Duplicate Post does not collect, store, or transmit any user data. All duplication operations happen locally on your WordPress installation.
-
-== Development ==
-
-Development happens on GitHub: https://github.com/olivierbigras/Oli-duplicate-post
-
-Contributions are welcome!
+Oli Duplicate Post does not collect, store, or transmit personal data. Duplication stays on your site.

@@ -3,6 +3,7 @@
  * Rewrite & Republish functionality.
  *
  * @package Oli_Duplicate_Post
+ * @since 1.0.0
  */
 
 // Exit if accessed directly.
@@ -11,12 +12,35 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Class Oli_DP_Rewrite_Republish
+ * Creates a working copy and merges it back into the original on publish.
+ *
+ * Scheduled copies stay as `future` until the scheduled time; only a
+ * transition to `publish` merges the copy back.
+ *
+ * @since 1.0.0
  */
 class Oli_DP_Rewrite_Republish {
 
 	/**
+	 * Whether a merge is already running.
+	 *
+	 * @since 1.0.0
+	 * @var bool
+	 */
+	private static $merging = false;
+
+	/**
+	 * Original post to redirect to after a classic-editor publish.
+	 *
+	 * @since 1.0.0
+	 * @var int
+	 */
+	private static $redirect_original_id = 0;
+
+	/**
 	 * Initialize the class.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function init() {
 		add_action( 'transition_post_status', array( __CLASS__, 'handle_publish' ), 10, 3 );
@@ -24,25 +48,32 @@ class Oli_DP_Rewrite_Republish {
 		add_filter( 'display_post_states', array( __CLASS__, 'add_post_state' ), 10, 2 );
 		add_action( 'add_meta_boxes', array( __CLASS__, 'add_schedule_meta_box' ) );
 		add_action( 'post_submitbox_misc_actions', array( __CLASS__, 'add_publish_box_info' ) );
+		add_filter( 'redirect_post_location', array( __CLASS__, 'redirect_after_merge' ) );
 	}
 
 	/**
 	 * Handle post publish for rewrite & republish.
+	 *
+	 * @since 1.0.0
 	 *
 	 * @param string  $new_status New post status.
 	 * @param string  $old_status Old post status.
 	 * @param WP_Post $post       Post object.
 	 */
 	public static function handle_publish( $new_status, $old_status, $post ) {
-		// Check if this is a rewrite copy being published.
-		$original_post_id = get_post_meta( $post->ID, '_oli_dp_original_post', true );
+		unset( $old_status );
 
-		if ( ! $original_post_id ) {
+		if ( self::$merging || ! $post instanceof WP_Post ) {
 			return;
 		}
 
-		// Only proceed if the post is being published or scheduled.
-		if ( ! in_array( $new_status, array( 'publish', 'future' ), true ) ) {
+		// Scheduled republish waits until the copy actually publishes.
+		if ( 'publish' !== $new_status ) {
+			return;
+		}
+
+		$original_post_id = absint( get_post_meta( $post->ID, '_oli_dp_original_post', true ) );
+		if ( ! $original_post_id ) {
 			return;
 		}
 
@@ -50,22 +81,37 @@ class Oli_DP_Rewrite_Republish {
 			return;
 		}
 
-		// Verify nonce if present (publish form). Cron-scheduled transitions have no nonce.
-		if ( isset( $_POST['oli_dp_rewrite_nonce'] ) ) {
-			if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['oli_dp_rewrite_nonce'] ) ), 'oli_dp_rewrite_publish' ) ) {
+		if ( isset( $_POST['oli_dp_rewrite_nonce'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$nonce = sanitize_text_field( wp_unslash( $_POST['oli_dp_rewrite_nonce'] ) );
+			if ( ! wp_verify_nonce( $nonce, 'oli_dp_rewrite_publish' ) ) {
 				return;
 			}
 		}
 
-		// Merge the rewrite copy back to the original.
-		self::merge_to_original( $post->ID, $original_post_id );
+		self::$merging = true;
+		$merged        = self::merge_to_original( $post->ID, $original_post_id );
+		self::$merging = false;
 
-		// Set a transient for success message.
-		set_transient( 'oli_dp_republish_success_' . get_current_user_id(), $original_post_id, 30 );
+		if ( ! $merged ) {
+			return;
+		}
+
+		if ( is_user_logged_in() ) {
+			set_transient( 'oli_dp_republish_success_' . get_current_user_id(), $original_post_id, 60 );
+		}
+
+		if ( is_admin() && ! wp_doing_cron() && ! wp_doing_ajax() && ! self::is_rest_request() ) {
+			self::$redirect_original_id = $original_post_id;
+		}
 	}
 
 	/**
 	 * Merge rewrite copy to original post.
+	 *
+	 * The original permalink and publish date are preserved so the live URL
+	 * does not change. The working copy is trashed after a successful merge.
+	 *
+	 * @since 1.0.0
 	 *
 	 * @param int $rewrite_post_id  The rewrite copy post ID.
 	 * @param int $original_post_id The original post ID.
@@ -79,48 +125,77 @@ class Oli_DP_Rewrite_Republish {
 			return false;
 		}
 
-		// Update the original post with the rewrite content.
+		/**
+		 * Fires before a rewrite copy is merged into the original.
+		 *
+		 * @since 1.0.0
+		 *
+		 * @param int $original_post_id Original post ID.
+		 * @param int $rewrite_post_id  Rewrite copy ID.
+		 */
+		do_action( 'oli_dp_before_rewrite_merge', $original_post_id, $rewrite_post_id );
+
 		$update_data = array(
-			'ID'           => $original_post_id,
-			'post_title'   => $rewrite_post->post_title,
-			'post_content' => $rewrite_post->post_content,
-			'post_excerpt' => $rewrite_post->post_excerpt,
+			'ID'            => $original_post_id,
+			'post_title'    => $rewrite_post->post_title,
+			'post_content'  => $rewrite_post->post_content,
+			'post_excerpt'  => $rewrite_post->post_excerpt,
+			'post_name'     => $original_post->post_name,
+			'post_date'     => $original_post->post_date,
+			'post_date_gmt' => $original_post->post_date_gmt,
+			'post_author'   => $rewrite_post->post_author,
+			'post_password' => $rewrite_post->post_password,
+			'menu_order'    => $rewrite_post->menu_order,
 		);
 
-		$result = wp_update_post( $update_data );
+		/**
+		 * Filter post data written to the original during a rewrite merge.
+		 *
+		 * @since 1.0.0
+		 *
+		 * @param array   $update_data    Data passed to wp_update_post().
+		 * @param WP_Post $rewrite_post   Rewrite copy.
+		 * @param WP_Post $original_post  Original post.
+		 */
+		$update_data = apply_filters( 'oli_dp_rewrite_merge_post_data', $update_data, $rewrite_post, $original_post );
+
+		$result = wp_update_post( $update_data, true );
 
 		if ( is_wp_error( $result ) ) {
 			return false;
 		}
 
-		// Copy meta data.
-		$settings = get_option( 'oli_dp_settings', Oli_DP_Settings::get_default_settings() );
+		$settings = Oli_DP_Settings::get_settings();
 
-		// Get all meta from rewrite post.
+		$excluded_keys = array_merge(
+			Oli_DP_Utils::parse_list( isset( $settings['excluded_meta'] ) ? $settings['excluded_meta'] : '' ),
+			Oli_DP_Utils::default_internal_meta_keys()
+		);
+
+		/**
+		 * Filter meta keys skipped when merging a rewrite copy.
+		 *
+		 * @since 1.0.0
+		 *
+		 * @param string[] $excluded_keys     Keys and wildcard patterns.
+		 * @param int      $original_post_id  Original post ID.
+		 * @param int      $rewrite_post_id   Rewrite copy ID.
+		 */
+		$excluded_keys = apply_filters( 'oli_dp_rewrite_excluded_meta_keys', $excluded_keys, $original_post_id, $rewrite_post_id );
+
 		$rewrite_meta = get_post_meta( $rewrite_post_id );
-
-		// Get excluded meta keys.
-		$excluded_meta    = isset( $settings['excluded_meta'] ) ? $settings['excluded_meta'] : '';
-		$excluded_keys    = array_map( 'trim', explode( ',', $excluded_meta ) );
-		$default_excluded = array( '_edit_lock', '_edit_last', '_oli_dp_original_post' );
-		$excluded_keys    = array_merge( $excluded_keys, $default_excluded );
-
 		foreach ( $rewrite_meta as $meta_key => $meta_values ) {
-			// Skip excluded keys.
-			if ( self::should_exclude_meta( $meta_key, $excluded_keys ) ) {
+			if ( Oli_DP_Utils::should_exclude_meta( $meta_key, $excluded_keys ) ) {
 				continue;
 			}
 
-			// Delete old meta values from original.
 			delete_post_meta( $original_post_id, $meta_key );
 
-			// Copy new meta values.
 			foreach ( $meta_values as $meta_value ) {
 				add_post_meta( $original_post_id, $meta_key, maybe_unserialize( $meta_value ) );
 			}
 		}
 
-		// Copy taxonomies.
 		$taxonomies = get_object_taxonomies( $original_post->post_type );
 		foreach ( $taxonomies as $taxonomy ) {
 			$terms = wp_get_object_terms( $rewrite_post_id, $taxonomy, array( 'fields' => 'ids' ) );
@@ -129,7 +204,6 @@ class Oli_DP_Rewrite_Republish {
 			}
 		}
 
-		// Copy featured image.
 		$thumbnail_id = get_post_thumbnail_id( $rewrite_post_id );
 		if ( $thumbnail_id ) {
 			set_post_thumbnail( $original_post_id, $thumbnail_id );
@@ -137,12 +211,29 @@ class Oli_DP_Rewrite_Republish {
 			delete_post_thumbnail( $original_post_id );
 		}
 
-		// Delete the rewrite copy.
+		$template = get_page_template_slug( $rewrite_post_id );
+		if ( $template ) {
+			update_post_meta( $original_post_id, '_wp_page_template', $template );
+		} else {
+			delete_post_meta( $original_post_id, '_wp_page_template' );
+		}
+
+		$format = get_post_format( $rewrite_post_id );
+		if ( $format ) {
+			set_post_format( $original_post_id, $format );
+		} else {
+			set_post_format( $original_post_id, false );
+		}
+
 		delete_post_meta( $original_post_id, '_oli_dp_rewrite_copy' );
-		wp_delete_post( $rewrite_post_id, true );
+		delete_post_meta( $rewrite_post_id, '_oli_dp_original_post' );
+
+		wp_trash_post( $rewrite_post_id );
 
 		/**
-		 * Action after rewrite & republish merge.
+		 * Fires after a rewrite copy is merged back to the original.
+		 *
+		 * @since 1.0.0
 		 *
 		 * @param int $original_post_id The original post ID.
 		 * @param int $rewrite_post_id  The rewrite copy post ID.
@@ -153,88 +244,46 @@ class Oli_DP_Rewrite_Republish {
 	}
 
 	/**
-	 * Check if meta key should be excluded.
+	 * Show admin notice for rewrite copies and successful republish.
 	 *
-	 * @param string $meta_key      The meta key to check.
-	 * @param array  $excluded_keys Array of excluded keys (supports wildcards).
-	 * @return bool True if should be excluded, false otherwise.
-	 */
-	private static function should_exclude_meta( $meta_key, $excluded_keys ) {
-		foreach ( $excluded_keys as $pattern ) {
-			if ( empty( $pattern ) ) {
-				continue;
-			}
-
-			$regex_pattern = '/^' . str_replace( array( '\*', '\?' ), array( '.*', '.' ), preg_quote( $pattern, '/' ) ) . '$/';
-
-			if ( preg_match( $regex_pattern, $meta_key ) ) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/**
-	 * Show admin notice for rewrite copies.
+	 * @since 1.0.0
 	 */
 	public static function show_rewrite_notice() {
-		// Check for success message.
-		$success_post_id = get_transient( 'oli_dp_republish_success_' . get_current_user_id() );
-		if ( $success_post_id ) {
-			delete_transient( 'oli_dp_republish_success_' . get_current_user_id() );
-			$post = get_post( $success_post_id );
-			if ( $post ) {
-				?>
-				<div class="notice notice-success is-dismissible">
-					<p>
-						<?php
-						printf(
-							/* translators: %s: post title */
-							esc_html__( 'Successfully republished "%s" with your changes!', 'oli-duplicate-post' ),
-							esc_html( $post->post_title )
-						);
-						?>
-					</p>
-				</div>
-				<?php
-			}
+		if ( Oli_DP_Utils::allows_admin_notice( 'post_edit' ) || Oli_DP_Utils::allows_admin_notice( 'post_list' ) ) {
+			self::render_success_notice();
 		}
 
-		$screen = get_current_screen();
-
-		if ( ! $screen || 'post' !== $screen->base ) {
+		if ( ! Oli_DP_Utils::allows_admin_notice( 'post_edit' ) ) {
 			return;
 		}
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only check to display notice.
-		$post_id = isset( $_GET['post'] ) ? absint( $_GET['post'] ) : 0;
-
+		$post_id = self::get_requested_post_id();
 		if ( ! $post_id ) {
 			return;
 		}
 
-		$original_post_id = get_post_meta( $post_id, '_oli_dp_original_post', true );
-
+		$original_post_id = absint( get_post_meta( $post_id, '_oli_dp_original_post', true ) );
 		if ( ! $original_post_id ) {
 			return;
 		}
 
 		$original_post = get_post( $original_post_id );
-
 		if ( ! $original_post ) {
 			return;
 		}
 
 		$edit_link    = get_edit_post_link( $original_post_id );
 		$view_link    = get_permalink( $original_post_id );
-		$compare_link = add_query_arg(
-			array(
-				'page'     => 'oli-dp-compare',
-				'original' => $original_post_id,
-				'rewrite'  => $post_id,
+		$compare_link = wp_nonce_url(
+			add_query_arg(
+				array(
+					'page'     => 'oli-dp-compare',
+					'original' => $original_post_id,
+					'rewrite'  => $post_id,
+				),
+				admin_url( 'admin.php' )
 			),
-			admin_url( 'admin.php' )
+			'oli_dp_compare_' . $original_post_id . '_' . $post_id
 		);
 
 		?>
@@ -242,8 +291,18 @@ class Oli_DP_Rewrite_Republish {
 			<p>
 				<?php
 				printf(
-					/* translators: 1: Original post title, 2: Edit link, 3: View link, 4: Compare link */
-					wp_kses_post( __( 'This is a <strong>Rewrite & Republish</strong> copy of "%1$s". When you publish this post, it will replace the original. <a href="%2$s">Edit original</a> | <a href="%3$s" target="_blank">View original</a> | <a href="%4$s">Compare changes</a>', 'oli-duplicate-post' ) ),
+					wp_kses(
+						/* translators: 1: Original post title, 2: Edit link, 3: View link, 4: Compare link */
+						__( 'This is a <strong>Rewrite &amp; Republish</strong> copy of "%1$s". When you publish this post, it will replace the original. <a href="%2$s">Edit original</a> | <a href="%3$s" target="_blank" rel="noopener noreferrer">View original</a> | <a href="%4$s">Compare changes</a>', 'oli-duplicate-post' ),
+						array(
+							'strong' => array(),
+							'a'      => array(
+								'href'   => array(),
+								'target' => array(),
+								'rel'    => array(),
+							),
+						)
+					),
 					esc_html( $original_post->post_title ),
 					esc_url( $edit_link ),
 					esc_url( $view_link ),
@@ -256,7 +315,41 @@ class Oli_DP_Rewrite_Republish {
 	}
 
 	/**
+	 * Render the republish success notice when a transient is present.
+	 *
+	 * @since 1.0.0
+	 */
+	private static function render_success_notice() {
+		$success_post_id = get_transient( 'oli_dp_republish_success_' . get_current_user_id() );
+		if ( ! $success_post_id ) {
+			return;
+		}
+
+		delete_transient( 'oli_dp_republish_success_' . get_current_user_id() );
+		$post = get_post( $success_post_id );
+		if ( ! $post ) {
+			return;
+		}
+
+		?>
+		<div class="notice notice-success is-dismissible">
+			<p>
+				<?php
+				printf(
+					/* translators: %s: post title */
+					esc_html__( 'Successfully republished "%s" with your changes.', 'oli-duplicate-post' ),
+					esc_html( $post->post_title )
+				);
+				?>
+			</p>
+		</div>
+		<?php
+	}
+
+	/**
 	 * Add post state for rewrite copies.
+	 *
+	 * @since 1.0.0
 	 *
 	 * @param array   $post_states Array of post states.
 	 * @param WP_Post $post        Post object.
@@ -280,15 +373,11 @@ class Oli_DP_Rewrite_Republish {
 
 	/**
 	 * Add schedule meta box for rewrite copies.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function add_schedule_meta_box() {
-		$screen = get_current_screen();
-		if ( ! $screen ) {
-			return;
-		}
-
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only check to determine if meta box should be added.
-		$post_id = isset( $_GET['post'] ) ? absint( $_GET['post'] ) : 0;
+		$post_id = self::get_requested_post_id();
 		if ( ! $post_id ) {
 			return;
 		}
@@ -298,11 +387,16 @@ class Oli_DP_Rewrite_Republish {
 			return;
 		}
 
+		$post = get_post( $post_id );
+		if ( ! $post ) {
+			return;
+		}
+
 		add_meta_box(
 			'oli_dp_republish_schedule',
 			__( 'Republish Schedule', 'oli-duplicate-post' ),
 			array( __CLASS__, 'render_schedule_meta_box' ),
-			$screen->post_type,
+			$post->post_type,
 			'side',
 			'high'
 		);
@@ -310,6 +404,8 @@ class Oli_DP_Rewrite_Republish {
 
 	/**
 	 * Render schedule meta box.
+	 *
+	 * @since 1.0.0
 	 *
 	 * @param WP_Post $post Post object.
 	 */
@@ -320,6 +416,9 @@ class Oli_DP_Rewrite_Republish {
 		}
 
 		$original_post = get_post( $original_post_id );
+		if ( ! $original_post ) {
+			return;
+		}
 		?>
 		<div class="oli-dp-schedule-info">
 			<p>
@@ -327,15 +426,15 @@ class Oli_DP_Rewrite_Republish {
 				<?php echo esc_html( $original_post->post_title ); ?>
 			</p>
 			<p class="description">
-				<?php esc_html_e( 'When you publish or schedule this post, it will automatically replace the original post with your changes.', 'oli-duplicate-post' ); ?>
+				<?php esc_html_e( 'When you publish this post it replaces the original immediately. Scheduling keeps the original live until the scheduled time.', 'oli-duplicate-post' ); ?>
 			</p>
 			<p>
 				<strong><?php esc_html_e( 'Actions:', 'oli-duplicate-post' ); ?></strong>
 			</p>
 			<ul class="oli-dp-schedule-list">
-				<li><?php esc_html_e( 'Publish Now → Replaces original immediately', 'oli-duplicate-post' ); ?></li>
-				<li><?php esc_html_e( 'Schedule → Replaces original at scheduled time', 'oli-duplicate-post' ); ?></li>
-				<li><?php esc_html_e( 'Save Draft → Keep editing without publishing', 'oli-duplicate-post' ); ?></li>
+				<li><?php esc_html_e( 'Publish now: replace the original immediately.', 'oli-duplicate-post' ); ?></li>
+				<li><?php esc_html_e( 'Schedule: replace the original at the scheduled time.', 'oli-duplicate-post' ); ?></li>
+				<li><?php esc_html_e( 'Save draft: keep editing without publishing.', 'oli-duplicate-post' ); ?></li>
 			</ul>
 		</div>
 		<?php
@@ -343,6 +442,8 @@ class Oli_DP_Rewrite_Republish {
 
 	/**
 	 * Add info to publish box for rewrite copies.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function add_publish_box_info() {
 		global $post;
@@ -369,7 +470,30 @@ class Oli_DP_Rewrite_Republish {
 	}
 
 	/**
+	 * Redirect the classic editor to the original post after a merge.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param string $location Redirect URL.
+	 * @return string
+	 */
+	public static function redirect_after_merge( $location ) {
+		if ( ! self::$redirect_original_id ) {
+			return $location;
+		}
+
+		$edit_link = get_edit_post_link( self::$redirect_original_id, 'raw' );
+		if ( ! $edit_link ) {
+			return $location;
+		}
+
+		return add_query_arg( 'oli_dp_republished', 1, $edit_link );
+	}
+
+	/**
 	 * Get comparison data for two posts.
+	 *
+	 * @since 1.0.0
 	 *
 	 * @param int $post_id_1 First post ID.
 	 * @param int $post_id_2 Second post ID.
@@ -397,5 +521,51 @@ class Oli_DP_Rewrite_Republish {
 				'rewrite'  => $post_2->post_excerpt,
 			),
 		);
+	}
+
+	/**
+	 * Current post ID from the editor request.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @return int
+	 */
+	private static function get_requested_post_id() {
+		if ( isset( $_GET['post'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			return absint( wp_unslash( $_GET['post'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		}
+
+		global $post;
+		if ( $post instanceof WP_Post ) {
+			return (int) $post->ID;
+		}
+
+		return 0;
+	}
+
+	/**
+	 * Whether the current request is a REST request.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @return bool
+	 */
+	private static function is_rest_request() {
+		if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
+			return true;
+		}
+
+		if ( isset( $GLOBALS['wp_rest_server'] ) && $GLOBALS['wp_rest_server'] instanceof WP_REST_Server ) {
+			return true;
+		}
+
+		if ( isset( $_SERVER['REQUEST_URI'] ) ) {
+			$request_uri = sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) );
+			if ( false !== strpos( $request_uri, '/wp-json/' ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 }

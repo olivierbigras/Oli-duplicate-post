@@ -2,9 +2,6 @@
 /**
  * Smoke tests for Oli Duplicate Post plugin.
  *
- * This script performs basic validation checks on the plugin files
- * without requiring a WordPress installation or WP-CLI.
- *
  * Usage: php tests/smoke-test.php
  *
  * @package Oli_Duplicate_Post
@@ -46,7 +43,7 @@ function oli_dp_test_section( $message ) {
  */
 function oli_dp_collect_php_files( $dir ) {
 	$files  = array();
-	$skip   = array( 'vendor', 'node_modules', '.git' );
+	$skip   = array( 'vendor', 'node_modules', '.git', 'artifacts' );
 	$handle = opendir( $dir );
 
 	if ( false === $handle ) {
@@ -85,7 +82,7 @@ if ( file_exists( $plugin_root . '/oli-duplicate-post.php' ) ) {
 	oli_dp_test_fail( 'Main plugin file not found' );
 }
 
-$required_dirs = array( 'includes', 'admin', 'assets', 'assets/js', 'assets/css', 'languages', 'tests', '.github/workflows' );
+$required_dirs = array( 'includes', 'admin', 'assets', 'assets/js', 'assets/css', 'languages', 'tests', 'tests/phpunit', '.github/workflows' );
 foreach ( $required_dirs as $dir ) {
 	++$total_tests;
 	if ( is_dir( $plugin_root . '/' . $dir ) ) {
@@ -97,9 +94,11 @@ foreach ( $required_dirs as $dir ) {
 }
 
 $required_files = array(
+	'includes/class-oli-dp-utils.php',
 	'includes/class-oli-dp-permissions.php',
 	'includes/class-oli-dp-settings.php',
 	'includes/class-oli-dp-duplicator.php',
+	'includes/class-oli-dp-woocommerce.php',
 	'includes/class-oli-dp-rewrite-republish.php',
 	'includes/class-oli-dp-comparison.php',
 	'includes/class-oli-dp-hooks.php',
@@ -112,7 +111,11 @@ $required_files = array(
 	'assets/js/block-editor.js',
 	'assets/js/quick-edit.js',
 	'assets/css/admin.css',
+	'uninstall.php',
+	'LICENSE',
 	'phpcs.xml.dist',
+	'phpunit.xml.dist',
+	'wp-env.json',
 	'composer.json',
 );
 
@@ -128,7 +131,7 @@ foreach ( $required_files as $file ) {
 
 oli_dp_test_section( 'WordPress.org Compliance Tests' );
 ++$total_tests;
-$readme_path = $plugin_root . '/readme.txt';
+$readme_path    = $plugin_root . '/readme.txt';
 $readme_content = '';
 if ( file_exists( $readme_path ) ) {
 	oli_dp_test_pass( 'readme.txt exists' );
@@ -164,6 +167,14 @@ if ( file_exists( $readme_path ) ) {
 	}
 
 	++$total_tests;
+	if ( false !== strpos( $readme_content, 'oli@olivierbigras.com' ) ) {
+		oli_dp_test_pass( 'readme.txt includes contact email' );
+		++$passed_tests;
+	} else {
+		oli_dp_test_fail( 'readme.txt missing contact email' );
+	}
+
+	++$total_tests;
 	if ( false !== strpos( $readme_content, 'github.com/olivierbigras' ) && false === strpos( $readme_content, 'github.com/bigrat95' ) ) {
 		oli_dp_test_pass( 'readme.txt GitHub URL uses olivierbigras owner' );
 		++$passed_tests;
@@ -183,7 +194,7 @@ if ( file_exists( $readme_path ) ) {
 }
 
 oli_dp_test_section( 'Code Standards Tests' );
-$main_file = file_get_contents( $plugin_root . '/oli-duplicate-post.php' );
+$main_file  = file_get_contents( $plugin_root . '/oli-duplicate-post.php' );
 $plugin_php = '';
 foreach ( oli_dp_collect_php_files( $plugin_root ) as $php_path ) {
 	if ( false !== strpos( $php_path, '/tests/' ) ) {
@@ -217,6 +228,42 @@ if ( preg_match( '/Text Domain:\s*oli-duplicate-post/', $main_file ) ) {
 }
 
 ++$total_tests;
+if ( preg_match( '/Author URI:\s*https:\/\/github.com\/olivierbigras/', $main_file ) ) {
+	oli_dp_test_pass( 'Author URI is github.com/olivierbigras' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Author URI should be https://github.com/olivierbigras' );
+}
+
+++$total_tests;
+if ( ! preg_match( '/^\s*\*\s*Plugin URI:/m', $main_file ) ) {
+	oli_dp_test_pass( 'Plugin URI omitted from plugin header' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Plugin URI should be omitted' );
+}
+
+++$total_tests;
+if ( ! preg_match( '/load_plugin_textdomain\s*\(/', $plugin_php ) ) {
+	oli_dp_test_pass( 'Does not call load_plugin_textdomain()' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'load_plugin_textdomain() must not be called' );
+}
+
+++$total_tests;
+$po_files = array_merge(
+	glob( $plugin_root . '/languages/*.po' ) ?: array(),
+	glob( $plugin_root . '/languages/*.mo' ) ?: array()
+);
+if ( empty( $po_files ) ) {
+	oli_dp_test_pass( 'No bundled .po or .mo files' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Bundled translation binaries are not allowed' );
+}
+
+++$total_tests;
 $version_in_main   = preg_match( '/Version:\s*([\d.]+)/', $main_file, $main_version );
 $version_in_readme = preg_match( '/Stable tag:\s*([\d.]+)/', $readme_content, $readme_version );
 if ( $version_in_main && $version_in_readme && $main_version[1] === $readme_version[1] ) {
@@ -224,14 +271,6 @@ if ( $version_in_main && $version_in_readme && $main_version[1] === $readme_vers
 	++$passed_tests;
 } else {
 	oli_dp_test_fail( 'Version mismatch between plugin file and readme.txt' );
-}
-
-++$total_tests;
-if ( preg_match( '/0\.1\.2/', $main_file ) ) {
-	oli_dp_test_pass( 'Plugin version is 0.1.2' );
-	++$passed_tests;
-} else {
-	oli_dp_test_fail( 'Plugin version is not 0.1.2' );
 }
 
 oli_dp_test_section( 'PHP Syntax Tests' );
@@ -273,17 +312,33 @@ if ( preg_match( '/sanitize_|esc_html|esc_attr|esc_url/', $plugin_php ) ) {
 }
 
 ++$total_tests;
-if ( preg_match( '/wp_verify_nonce|wp_create_nonce/', $plugin_php ) ) {
+if ( preg_match( '/wp_verify_nonce|wp_create_nonce|wp_nonce_url/', $plugin_php ) ) {
 	oli_dp_test_pass( 'Uses nonce verification' );
 	++$passed_tests;
 } else {
 	oli_dp_test_fail( 'Nonce functions not found' );
 }
 
+++$total_tests;
+if ( preg_match( '/copy_featured_image/', $plugin_php ) ) {
+	oli_dp_test_pass( 'Featured image copy setting present' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Featured image copy setting missing' );
+}
+
+++$total_tests;
+if ( preg_match( '/future/', $plugin_php ) && preg_match( '/merge_to_original/', $plugin_php ) ) {
+	oli_dp_test_pass( 'Scheduled republish path is present' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Scheduled republish path missing' );
+}
+
 oli_dp_test_section( 'Asset Enqueue Tests' );
 
-$plugin_js  = '';
-$js_files   = glob( $plugin_root . '/assets/js/*.js' );
+$plugin_js = '';
+$js_files  = glob( $plugin_root . '/assets/js/*.js' );
 if ( is_array( $js_files ) ) {
 	foreach ( $js_files as $js_file ) {
 		$plugin_js .= file_get_contents( $js_file ) . "\n";
@@ -356,6 +411,14 @@ if ( false !== strpos( $plugin_php, 'Republish Schedule' ) ) {
 	oli_dp_test_fail( 'Scheduled republish UI missing' );
 }
 
+++$total_tests;
+if ( false !== strpos( $plugin_php, 'Oli_DP_WooCommerce' ) ) {
+	oli_dp_test_pass( 'WooCommerce handling class present' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'WooCommerce handling missing' );
+}
+
 oli_dp_test_section( 'CI/CD Tests' );
 ++$total_tests;
 $workflow_file = $plugin_root . '/.github/workflows/php-checks.yml';
@@ -374,11 +437,27 @@ if ( file_exists( $workflow_file ) ) {
 	}
 
 	++$total_tests;
-	if ( false !== strpos( $workflow_content, 'phpcs' ) ) {
-		oli_dp_test_pass( 'Workflow includes PHPCS' );
+	if ( false !== strpos( $workflow_content, 'phpcs' ) && false !== strpos( $workflow_content, 'WordPress-Extra' ) ) {
+		oli_dp_test_pass( 'Workflow includes PHPCS WordPress-Extra' );
 		++$passed_tests;
 	} else {
-		oli_dp_test_fail( 'Workflow missing PHPCS' );
+		oli_dp_test_fail( 'Workflow missing PHPCS WordPress-Extra' );
+	}
+
+	++$total_tests;
+	if ( false !== strpos( $workflow_content, 'plugin-check-action' ) ) {
+		oli_dp_test_pass( 'Workflow includes Plugin Check action' );
+		++$passed_tests;
+	} else {
+		oli_dp_test_fail( 'Workflow missing Plugin Check action' );
+	}
+
+	++$total_tests;
+	if ( false !== strpos( $workflow_content, 'phpunit' ) ) {
+		oli_dp_test_pass( 'Workflow includes PHPUnit' );
+		++$passed_tests;
+	} else {
+		oli_dp_test_fail( 'Workflow missing PHPUnit' );
 	}
 } else {
 	oli_dp_test_fail( 'GitHub Actions workflow not found' );
@@ -409,6 +488,15 @@ if ( false === strpos( $changelog . $readme_md, 'github.com/bigrat95' ) && false
 	++$passed_tests;
 } else {
 	oli_dp_test_fail( 'Docs still contain github.com/bigrat95 or missing olivierbigras GitHub URL' );
+}
+
+++$total_tests;
+$phpcs_config = file_get_contents( $plugin_root . '/phpcs.xml.dist' );
+if ( false !== strpos( $phpcs_config, 'WordPress-Extra' ) ) {
+	oli_dp_test_pass( 'phpcs.xml.dist uses WordPress-Extra' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'phpcs.xml.dist must use WordPress-Extra' );
 }
 
 oli_dp_test_section( 'Test Summary' );

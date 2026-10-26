@@ -1,5 +1,5 @@
 /**
- * Block editor sidebar panel and Options menu items.
+ * Block editor sidebar panel, Options menu items, and rewrite redirect.
  *
  * @package Oli_Duplicate_Post
  */
@@ -21,6 +21,8 @@
 	var cloneUrl = config.cloneUrl || '';
 	var newDraftUrl = config.newDraftUrl || '';
 	var rewriteUrl = config.rewriteUrl || '';
+	var isRewrite = !! config.isRewrite;
+	var originalEditUrl = config.originalEditUrl || '';
 	var i18n = config.i18n || {};
 
 	var OliDPPanel = function () {
@@ -117,4 +119,27 @@
 		},
 		icon: null,
 	} );
+
+	if ( isRewrite && originalEditUrl && wp.data && wp.data.subscribe && wp.data.select ) {
+		var wasSaving = false;
+		wp.data.subscribe( function () {
+			var editor = wp.data.select( 'core/editor' );
+			if ( ! editor || ! editor.isSavingPost || ! editor.didPostSaveRequestSucceed ) {
+				return;
+			}
+
+			var isSaving = editor.isSavingPost();
+			var didSucceed = editor.didPostSaveRequestSucceed();
+			var isAutosaving = editor.isAutosavingPost ? editor.isAutosavingPost() : false;
+			var status = editor.getEditedPostAttribute
+				? editor.getEditedPostAttribute( 'status' )
+				: '';
+
+			if ( wasSaving && ! isSaving && didSucceed && ! isAutosaving && ( 'publish' === status || 'future' === status ) ) {
+				window.location.href = originalEditUrl;
+			}
+
+			wasSaving = isSaving;
+		} );
+	}
 }( window.wp, window.oliDpBlockEditor ) );

@@ -3,6 +3,7 @@
  * Quick edit integration.
  *
  * @package Oli_Duplicate_Post
+ * @since 1.0.0
  */
 
 // Exit if accessed directly.
@@ -11,20 +12,25 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Class Oli_DP_Quick_Edit
+ * Adds a Copy to New Draft control inside Quick Edit.
+ *
+ * @since 1.0.0
  */
 class Oli_DP_Quick_Edit {
 
 	/**
 	 * Initialize the class.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function init() {
 		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'enqueue_scripts' ) );
-		add_action( 'quick_edit_custom_box', array( __CLASS__, 'render_quick_edit_custom_box' ), 10, 2 );
 	}
 
 	/**
 	 * Enqueue Quick Edit script on list tables.
+	 *
+	 * @since 1.0.0
 	 *
 	 * @param string $hook Current admin page hook.
 	 */
@@ -33,7 +39,7 @@ class Oli_DP_Quick_Edit {
 			return;
 		}
 
-		$settings = get_option( 'oli_dp_settings', Oli_DP_Settings::get_default_settings() );
+		$settings = Oli_DP_Settings::get_settings();
 		if ( empty( $settings['show_row_actions'] ) ) {
 			return;
 		}
@@ -60,17 +66,5 @@ class Oli_DP_Quick_Edit {
 				'copyToNewDraft' => __( 'Copy to New Draft', 'oli-duplicate-post' ),
 			)
 		);
-
-		wp_set_script_translations( 'oli-dp-quick-edit', 'oli-duplicate-post', OLI_DP_PLUGIN_DIR . 'languages' );
-	}
-
-	/**
-	 * Render custom box in quick edit (not used but kept for extensibility).
-	 *
-	 * @param string $column_name Column name.
-	 * @param string $post_type   Post type.
-	 */
-	public static function render_quick_edit_custom_box( $column_name, $post_type ) {
-		unset( $column_name, $post_type );
 	}
 }

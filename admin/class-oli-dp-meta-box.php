@@ -1,8 +1,9 @@
 <?php
 /**
- * Edit screen meta box.
+ * Edit screen meta box and block editor panel.
  *
  * @package Oli_Duplicate_Post
+ * @since 1.0.0
  */
 
 // Exit if accessed directly.
@@ -11,12 +12,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Class Oli_DP_Meta_Box
+ * Classic editor meta box and block editor sidebar/Options menu.
+ *
+ * @since 1.0.0
  */
 class Oli_DP_Meta_Box {
 
 	/**
 	 * Initialize the class.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function init() {
 		add_action( 'add_meta_boxes', array( __CLASS__, 'add_meta_box' ) );
@@ -25,10 +30,11 @@ class Oli_DP_Meta_Box {
 
 	/**
 	 * Add meta box to edit screen.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function add_meta_box() {
-		// Check if edit screen should show duplicate box.
-		$settings = get_option( 'oli_dp_settings', Oli_DP_Settings::get_default_settings() );
+		$settings = Oli_DP_Settings::get_settings();
 
 		if ( empty( $settings['show_edit_screen'] ) ) {
 			return;
@@ -36,7 +42,7 @@ class Oli_DP_Meta_Box {
 
 		$enabled_post_types = isset( $settings['enabled_post_types'] ) ? $settings['enabled_post_types'] : array();
 
-		foreach ( $enabled_post_types as $post_type ) {
+		foreach ( (array) $enabled_post_types as $post_type ) {
 			add_meta_box(
 				'oli_dp_duplicate_box',
 				__( 'Duplicate Post', 'oli-duplicate-post' ),
@@ -50,6 +56,8 @@ class Oli_DP_Meta_Box {
 
 	/**
 	 * Render meta box content.
+	 *
+	 * @since 1.0.0
 	 *
 	 * @param WP_Post $post Post object.
 	 */
@@ -76,21 +84,21 @@ class Oli_DP_Meta_Box {
 			</p>
 			<?php if ( 'publish' === $post->post_status ) : ?>
 				<?php
-				$existing_rewrite = get_post_meta( $post->ID, '_oli_dp_rewrite_copy', true );
+				$existing_rewrite = absint( get_post_meta( $post->ID, '_oli_dp_rewrite_copy', true ) );
 
-				if ( ! $existing_rewrite ) {
-					$rewrite_url = Oli_DP_Hooks::get_duplicate_url( $post->ID, 'rewrite_republish' );
+				if ( $existing_rewrite && get_post( $existing_rewrite ) ) {
+					$edit_url = get_edit_post_link( $existing_rewrite );
 					?>
-					<p>
-						<a href="<?php echo esc_url( $rewrite_url ); ?>" class="button button-secondary button-large oli-dp-button-full">
-							<?php esc_html_e( 'Rewrite & Republish', 'oli-duplicate-post' ); ?>
-						</a>
-					</p>
-				<?php } else { ?>
-					<?php $edit_url = get_edit_post_link( $existing_rewrite ); ?>
 					<p>
 						<a href="<?php echo esc_url( $edit_url ); ?>" class="button button-primary button-large oli-dp-button-full">
 							<?php esc_html_e( 'Edit Rewrite Copy', 'oli-duplicate-post' ); ?>
+						</a>
+					</p>
+				<?php } elseif ( Oli_DP_Permissions::can_rewrite( $post->ID ) ) { ?>
+					<?php $rewrite_url = Oli_DP_Hooks::get_duplicate_url( $post->ID, 'rewrite_republish' ); ?>
+					<p>
+						<a href="<?php echo esc_url( $rewrite_url ); ?>" class="button button-secondary button-large oli-dp-button-full">
+							<?php esc_html_e( 'Rewrite & Republish', 'oli-duplicate-post' ); ?>
 						</a>
 					</p>
 				<?php } ?>
@@ -101,10 +109,11 @@ class Oli_DP_Meta_Box {
 
 	/**
 	 * Enqueue block editor assets.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function enqueue_block_editor_assets() {
-		// Check if edit screen should show duplicate box.
-		$settings = get_option( 'oli_dp_settings', Oli_DP_Settings::get_default_settings() );
+		$settings = Oli_DP_Settings::get_settings();
 
 		if ( empty( $settings['show_edit_screen'] ) ) {
 			return;
@@ -116,15 +125,19 @@ class Oli_DP_Meta_Box {
 			return;
 		}
 
-		$clone_url     = Oli_DP_Hooks::get_duplicate_url( $post->ID, 'clone' );
-		$new_draft_url = Oli_DP_Hooks::get_duplicate_url( $post->ID, 'new_draft' );
-		$rewrite_url   = '';
+		$clone_url       = Oli_DP_Hooks::get_duplicate_url( $post->ID, 'clone' );
+		$new_draft_url   = Oli_DP_Hooks::get_duplicate_url( $post->ID, 'new_draft' );
+		$rewrite_url     = '';
+		$original_edit   = '';
+		$is_rewrite_copy = (bool) get_post_meta( $post->ID, '_oli_dp_original_post', true );
 
-		if ( 'publish' === $post->post_status ) {
-			$existing_rewrite = get_post_meta( $post->ID, '_oli_dp_rewrite_copy', true );
-			if ( ! $existing_rewrite ) {
-				$rewrite_url = Oli_DP_Hooks::get_duplicate_url( $post->ID, 'rewrite_republish' );
+		if ( $is_rewrite_copy ) {
+			$original_id = absint( get_post_meta( $post->ID, '_oli_dp_original_post', true ) );
+			if ( $original_id ) {
+				$original_edit = get_edit_post_link( $original_id, 'raw' );
 			}
+		} elseif ( 'publish' === $post->post_status && Oli_DP_Permissions::can_rewrite( $post->ID ) ) {
+			$rewrite_url = Oli_DP_Hooks::get_duplicate_url( $post->ID, 'rewrite_republish' );
 		}
 
 		wp_enqueue_style(
@@ -137,7 +150,7 @@ class Oli_DP_Meta_Box {
 		wp_enqueue_script(
 			'oli-dp-block-editor',
 			OLI_DP_PLUGIN_URL . 'assets/js/block-editor.js',
-			array( 'wp-plugins', 'wp-edit-post', 'wp-element', 'wp-components', 'wp-i18n' ),
+			array( 'wp-plugins', 'wp-edit-post', 'wp-element', 'wp-components', 'wp-data', 'wp-i18n' ),
 			OLI_DP_VERSION,
 			true
 		);
@@ -146,10 +159,12 @@ class Oli_DP_Meta_Box {
 			'oli-dp-block-editor',
 			'oliDpBlockEditor',
 			array(
-				'cloneUrl'    => $clone_url,
-				'newDraftUrl' => $new_draft_url,
-				'rewriteUrl'  => $rewrite_url,
-				'i18n'        => array(
+				'cloneUrl'        => $clone_url,
+				'newDraftUrl'     => $new_draft_url,
+				'rewriteUrl'      => $rewrite_url,
+				'isRewrite'       => $is_rewrite_copy,
+				'originalEditUrl' => $original_edit ? $original_edit : '',
+				'i18n'            => array(
 					'duplicatePost'    => __( 'Duplicate Post', 'oli-duplicate-post' ),
 					'clone'            => __( 'Clone', 'oli-duplicate-post' ),
 					'newDraft'         => __( 'New Draft', 'oli-duplicate-post' ),
@@ -158,7 +173,5 @@ class Oli_DP_Meta_Box {
 				),
 			)
 		);
-
-		wp_set_script_translations( 'oli-dp-block-editor', 'oli-duplicate-post', OLI_DP_PLUGIN_DIR . 'languages' );
 	}
 }

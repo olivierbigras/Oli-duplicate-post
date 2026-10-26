@@ -3,6 +3,7 @@
  * Settings management.
  *
  * @package Oli_Duplicate_Post
+ * @since 1.0.0
  */
 
 // Exit if accessed directly.
@@ -11,12 +12,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Class Oli_DP_Settings
+ * Registers and sanitizes plugin settings.
+ *
+ * @since 1.0.0
  */
 class Oli_DP_Settings {
 
 	/**
 	 * Initialize the class.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function init() {
 		add_action( 'admin_menu', array( __CLASS__, 'add_settings_page' ) );
@@ -26,17 +31,24 @@ class Oli_DP_Settings {
 	/**
 	 * Get default settings.
 	 *
+	 * @since 1.0.0
+	 *
 	 * @return array Default settings.
 	 */
 	public static function get_default_settings() {
+		$enabled_post_types = array( 'post', 'page' );
+		if ( post_type_exists( 'product' ) ) {
+			$enabled_post_types[] = 'product';
+		}
+
 		return array(
-			// What to copy.
 			'copy_title'          => true,
 			'copy_date'           => false,
 			'copy_status'         => false,
 			'copy_slug'           => false,
 			'copy_excerpt'        => true,
 			'copy_content'        => true,
+			'copy_featured_image' => true,
 			'copy_template'       => true,
 			'copy_format'         => true,
 			'copy_author'         => false,
@@ -45,20 +57,12 @@ class Oli_DP_Settings {
 			'copy_attachments'    => false,
 			'copy_children'       => false,
 			'copy_comments'       => false,
-
-			// Title settings.
 			'title_prefix'        => '',
 			'title_suffix'        => __( ' (Copy)', 'oli-duplicate-post' ),
-
-			// Meta and taxonomy settings.
 			'excluded_meta'       => '_edit_lock,_edit_last,_wp_old_slug,_wp_old_date',
 			'excluded_taxonomies' => '',
-
-			// Post types and roles.
-			'enabled_post_types'  => array( 'post', 'page' ),
+			'enabled_post_types'  => $enabled_post_types,
 			'allowed_roles'       => array( 'administrator', 'editor' ),
-
-			// UI locations.
 			'show_row_actions'    => true,
 			'show_admin_bar'      => true,
 			'show_edit_screen'    => true,
@@ -67,7 +71,25 @@ class Oli_DP_Settings {
 	}
 
 	/**
+	 * Get saved settings merged with defaults.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @return array
+	 */
+	public static function get_settings() {
+		$saved = get_option( 'oli_dp_settings', array() );
+		if ( ! is_array( $saved ) ) {
+			$saved = array();
+		}
+
+		return wp_parse_args( $saved, self::get_default_settings() );
+	}
+
+	/**
 	 * Add settings page to admin menu.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function add_settings_page() {
 		add_options_page(
@@ -81,17 +103,20 @@ class Oli_DP_Settings {
 
 	/**
 	 * Register settings.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function register_settings() {
 		register_setting(
 			'oli_dp_settings_group',
 			'oli_dp_settings',
 			array(
+				'type'              => 'array',
 				'sanitize_callback' => array( __CLASS__, 'sanitize_settings' ),
+				'default'           => self::get_default_settings(),
 			)
 		);
 
-		// What to copy section.
 		add_settings_section(
 			'oli_dp_what_to_copy',
 			__( 'What to Copy', 'oli-duplicate-post' ),
@@ -99,7 +124,6 @@ class Oli_DP_Settings {
 			'oli-duplicate-post-settings'
 		);
 
-		// Title settings section.
 		add_settings_section(
 			'oli_dp_title_settings',
 			__( 'Title Settings', 'oli-duplicate-post' ),
@@ -107,7 +131,6 @@ class Oli_DP_Settings {
 			'oli-duplicate-post-settings'
 		);
 
-		// Advanced section.
 		add_settings_section(
 			'oli_dp_advanced',
 			__( 'Advanced Settings', 'oli-duplicate-post' ),
@@ -115,7 +138,6 @@ class Oli_DP_Settings {
 			'oli-duplicate-post-settings'
 		);
 
-		// Post types and permissions section.
 		add_settings_section(
 			'oli_dp_permissions',
 			__( 'Post Types & Permissions', 'oli-duplicate-post' ),
@@ -123,7 +145,6 @@ class Oli_DP_Settings {
 			'oli-duplicate-post-settings'
 		);
 
-		// UI locations section.
 		add_settings_section(
 			'oli_dp_ui_locations',
 			__( 'UI Locations', 'oli-duplicate-post' ),
@@ -131,30 +152,31 @@ class Oli_DP_Settings {
 			'oli-duplicate-post-settings'
 		);
 
-		// Register all fields.
 		self::register_all_fields();
 	}
 
 	/**
 	 * Register all settings fields.
+	 *
+	 * @since 1.0.0
 	 */
 	private static function register_all_fields() {
-		// What to copy fields.
 		$copy_fields = array(
-			'copy_title'       => __( 'Title', 'oli-duplicate-post' ),
-			'copy_date'        => __( 'Date', 'oli-duplicate-post' ),
-			'copy_status'      => __( 'Status', 'oli-duplicate-post' ),
-			'copy_slug'        => __( 'Slug', 'oli-duplicate-post' ),
-			'copy_excerpt'     => __( 'Excerpt', 'oli-duplicate-post' ),
-			'copy_content'     => __( 'Content', 'oli-duplicate-post' ),
-			'copy_template'    => __( 'Template', 'oli-duplicate-post' ),
-			'copy_format'      => __( 'Format', 'oli-duplicate-post' ),
-			'copy_author'      => __( 'Author', 'oli-duplicate-post' ),
-			'copy_password'    => __( 'Password', 'oli-duplicate-post' ),
-			'copy_menu_order'  => __( 'Menu Order', 'oli-duplicate-post' ),
-			'copy_attachments' => __( 'Attachments', 'oli-duplicate-post' ),
-			'copy_children'    => __( 'Children', 'oli-duplicate-post' ),
-			'copy_comments'    => __( 'Comments', 'oli-duplicate-post' ),
+			'copy_title'          => __( 'Title', 'oli-duplicate-post' ),
+			'copy_date'           => __( 'Date', 'oli-duplicate-post' ),
+			'copy_status'         => __( 'Status', 'oli-duplicate-post' ),
+			'copy_slug'           => __( 'Slug', 'oli-duplicate-post' ),
+			'copy_excerpt'        => __( 'Excerpt', 'oli-duplicate-post' ),
+			'copy_content'        => __( 'Content', 'oli-duplicate-post' ),
+			'copy_featured_image' => __( 'Featured Image', 'oli-duplicate-post' ),
+			'copy_template'       => __( 'Template', 'oli-duplicate-post' ),
+			'copy_format'         => __( 'Format', 'oli-duplicate-post' ),
+			'copy_author'         => __( 'Author', 'oli-duplicate-post' ),
+			'copy_password'       => __( 'Password', 'oli-duplicate-post' ),
+			'copy_menu_order'     => __( 'Menu Order', 'oli-duplicate-post' ),
+			'copy_attachments'    => __( 'Attachments', 'oli-duplicate-post' ),
+			'copy_children'       => __( 'Children', 'oli-duplicate-post' ),
+			'copy_comments'       => __( 'Comments', 'oli-duplicate-post' ),
 		);
 
 		foreach ( $copy_fields as $field => $label ) {
@@ -168,7 +190,6 @@ class Oli_DP_Settings {
 			);
 		}
 
-		// Title settings fields.
 		add_settings_field(
 			'title_prefix',
 			__( 'Title Prefix', 'oli-duplicate-post' ),
@@ -187,7 +208,6 @@ class Oli_DP_Settings {
 			array( 'field' => 'title_suffix' )
 		);
 
-		// Advanced fields.
 		add_settings_field(
 			'excluded_meta',
 			__( 'Excluded Meta Fields', 'oli-duplicate-post' ),
@@ -212,7 +232,6 @@ class Oli_DP_Settings {
 			)
 		);
 
-		// Post types field.
 		add_settings_field(
 			'enabled_post_types',
 			__( 'Enabled Post Types', 'oli-duplicate-post' ),
@@ -221,7 +240,6 @@ class Oli_DP_Settings {
 			'oli_dp_permissions'
 		);
 
-		// Allowed roles field.
 		add_settings_field(
 			'allowed_roles',
 			__( 'Allowed Roles', 'oli-duplicate-post' ),
@@ -230,7 +248,6 @@ class Oli_DP_Settings {
 			'oli_dp_permissions'
 		);
 
-		// UI locations fields.
 		$ui_fields = array(
 			'show_row_actions'  => __( 'Show in Row Actions', 'oli-duplicate-post' ),
 			'show_admin_bar'    => __( 'Show in Admin Bar', 'oli-duplicate-post' ),
@@ -251,7 +268,9 @@ class Oli_DP_Settings {
 	}
 
 	/**
-	 * Render section descriptions.
+	 * Render what-to-copy section description.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function render_section_what_to_copy() {
 		echo '<p>' . esc_html__( 'Choose which elements to copy when duplicating a post.', 'oli-duplicate-post' ) . '</p>';
@@ -259,6 +278,8 @@ class Oli_DP_Settings {
 
 	/**
 	 * Render title settings section.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function render_section_title_settings() {
 		echo '<p>' . esc_html__( 'Configure how the title should be modified for duplicated posts.', 'oli-duplicate-post' ) . '</p>';
@@ -266,6 +287,8 @@ class Oli_DP_Settings {
 
 	/**
 	 * Render advanced section.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function render_section_advanced() {
 		echo '<p>' . esc_html__( 'Advanced settings for meta fields and taxonomies.', 'oli-duplicate-post' ) . '</p>';
@@ -273,6 +296,8 @@ class Oli_DP_Settings {
 
 	/**
 	 * Render permissions section.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function render_section_permissions() {
 		echo '<p>' . esc_html__( 'Configure which post types can be duplicated and which user roles have access.', 'oli-duplicate-post' ) . '</p>';
@@ -280,18 +305,22 @@ class Oli_DP_Settings {
 
 	/**
 	 * Render UI locations section.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function render_section_ui_locations() {
-		echo '<p>' . esc_html__( 'Choose where duplicate links should appear in the WordPress admin.', 'oli-duplicate-post' ) . '</p>';
+		echo '<p>' . esc_html__( 'Choose where duplicate links should appear in the admin.', 'oli-duplicate-post' ) . '</p>';
 	}
 
 	/**
 	 * Render checkbox field.
 	 *
+	 * @since 1.0.0
+	 *
 	 * @param array $args Field arguments.
 	 */
 	public static function render_checkbox_field( $args ) {
-		$settings = get_option( 'oli_dp_settings', self::get_default_settings() );
+		$settings = self::get_settings();
 		$field    = $args['field'];
 		$value    = isset( $settings[ $field ] ) ? $settings[ $field ] : false;
 		?>
@@ -304,10 +333,12 @@ class Oli_DP_Settings {
 	/**
 	 * Render text field.
 	 *
+	 * @since 1.0.0
+	 *
 	 * @param array $args Field arguments.
 	 */
 	public static function render_text_field( $args ) {
-		$settings = get_option( 'oli_dp_settings', self::get_default_settings() );
+		$settings = self::get_settings();
 		$field    = $args['field'];
 		$value    = isset( $settings[ $field ] ) ? $settings[ $field ] : '';
 		?>
@@ -321,10 +352,12 @@ class Oli_DP_Settings {
 	/**
 	 * Render textarea field.
 	 *
+	 * @since 1.0.0
+	 *
 	 * @param array $args Field arguments.
 	 */
 	public static function render_textarea_field( $args ) {
-		$settings = get_option( 'oli_dp_settings', self::get_default_settings() );
+		$settings = self::get_settings();
 		$field    = $args['field'];
 		$value    = isset( $settings[ $field ] ) ? $settings[ $field ] : '';
 		?>
@@ -337,14 +370,20 @@ class Oli_DP_Settings {
 
 	/**
 	 * Render post types field.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function render_post_types_field() {
-		$settings           = get_option( 'oli_dp_settings', self::get_default_settings() );
+		$settings           = self::get_settings();
 		$enabled_post_types = isset( $settings['enabled_post_types'] ) ? $settings['enabled_post_types'] : array();
 
 		$post_types = get_post_types( array( 'show_ui' => true ), 'objects' );
 
 		foreach ( $post_types as $post_type ) {
+			if ( in_array( $post_type->name, array( 'attachment', 'wp_block', 'wp_navigation' ), true ) ) {
+				continue;
+			}
+
 			$checked = in_array( $post_type->name, $enabled_post_types, true );
 			?>
 			<label class="oli-dp-settings-option">
@@ -357,9 +396,11 @@ class Oli_DP_Settings {
 
 	/**
 	 * Render roles field.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function render_roles_field() {
-		$settings      = get_option( 'oli_dp_settings', self::get_default_settings() );
+		$settings      = self::get_settings();
 		$allowed_roles = isset( $settings['allowed_roles'] ) ? $settings['allowed_roles'] : array();
 
 		$roles = wp_roles()->roles;
@@ -369,7 +410,7 @@ class Oli_DP_Settings {
 			?>
 			<label class="oli-dp-settings-option">
 				<input type="checkbox" name="oli_dp_settings[allowed_roles][]" value="<?php echo esc_attr( $role_key ); ?>" <?php checked( $checked ); ?> />
-				<?php echo esc_html( $role['name'] ); ?>
+				<?php echo esc_html( translate_user_role( $role['name'] ) ); ?>
 			</label>
 			<?php
 		}
@@ -377,6 +418,8 @@ class Oli_DP_Settings {
 
 	/**
 	 * Render settings page.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function render_settings_page() {
 		if ( ! Oli_DP_Permissions::can_manage_settings() ) {
@@ -399,13 +442,18 @@ class Oli_DP_Settings {
 	/**
 	 * Sanitize settings.
 	 *
+	 * @since 1.0.0
+	 *
 	 * @param array $input Input settings.
 	 * @return array Sanitized settings.
 	 */
 	public static function sanitize_settings( $input ) {
+		if ( ! is_array( $input ) ) {
+			$input = array();
+		}
+
 		$sanitized = array();
 
-		// Checkbox fields.
 		$checkbox_fields = array(
 			'copy_title',
 			'copy_date',
@@ -413,6 +461,7 @@ class Oli_DP_Settings {
 			'copy_slug',
 			'copy_excerpt',
 			'copy_content',
+			'copy_featured_image',
 			'copy_template',
 			'copy_format',
 			'copy_author',
@@ -431,15 +480,11 @@ class Oli_DP_Settings {
 			$sanitized[ $field ] = ! empty( $input[ $field ] );
 		}
 
-		// Text fields.
-		$sanitized['title_prefix'] = sanitize_text_field( $input['title_prefix'] ?? '' );
-		$sanitized['title_suffix'] = sanitize_text_field( $input['title_suffix'] ?? '' );
-
-		// Textarea fields.
+		$sanitized['title_prefix']        = sanitize_text_field( $input['title_prefix'] ?? '' );
+		$sanitized['title_suffix']        = sanitize_text_field( $input['title_suffix'] ?? '' );
 		$sanitized['excluded_meta']       = sanitize_textarea_field( $input['excluded_meta'] ?? '' );
 		$sanitized['excluded_taxonomies'] = sanitize_textarea_field( $input['excluded_taxonomies'] ?? '' );
 
-		// Array fields.
 		$sanitized['enabled_post_types'] = array();
 		if ( ! empty( $input['enabled_post_types'] ) && is_array( $input['enabled_post_types'] ) ) {
 			foreach ( $input['enabled_post_types'] as $post_type ) {
