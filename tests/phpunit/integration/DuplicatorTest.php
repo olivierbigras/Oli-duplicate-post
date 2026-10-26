@@ -138,6 +138,10 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 		$this->assertSame( 'live-article', $original->post_name );
 		$this->assertSame( 'publish', $original->post_status );
 		$this->assertEmpty( get_post_meta( $original_id, '_oli_dp_rewrite_copy', true ) );
+		$this->assertNotNull( get_post( $rewrite_id ) );
+
+		Oli_DP_Rewrite_Republish::delete_merged_copies();
+
 		$this->assertNull( get_post( $rewrite_id ) );
 		$this->assertFalse( get_post_status( $rewrite_id ) );
 	}
@@ -171,6 +175,39 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 		wp_publish_post( $rewrite_id );
 
 		$this->assertSame( 'Scheduled rewrite', get_post( $original_id )->post_content );
+		Oli_DP_Rewrite_Republish::delete_merged_copies();
+	}
+
+	public function test_future_gmt_rewrite_copy_does_not_merge_immediately() {
+		$original_id = self::factory()->post->create(
+			array(
+				'post_title'   => 'Stay Live',
+				'post_content' => 'Current',
+				'post_status'  => 'publish',
+			)
+		);
+
+		$rewrite_id = Oli_DP_Duplicator::duplicate( $original_id, 'rewrite_republish' );
+		$gmt        = gmdate( 'Y-m-d H:i:s', time() + 60 );
+		$local      = get_date_from_gmt( $gmt );
+
+		wp_update_post(
+			array(
+				'ID'            => $rewrite_id,
+				'post_content'  => 'Too soon',
+				'post_status'   => 'future',
+				'post_date'     => $local,
+				'post_date_gmt' => $gmt,
+			)
+		);
+
+		$rewrite = get_post( $rewrite_id );
+		Oli_DP_Rewrite_Republish::handle_publish( 'publish', 'future', $rewrite );
+		Oli_DP_Rewrite_Republish::merge_after_save( $rewrite_id, $rewrite, true );
+		Oli_DP_Rewrite_Republish::delete_merged_copies();
+
+		$this->assertSame( 'Current', get_post( $original_id )->post_content );
+		$this->assertNotNull( get_post( $rewrite_id ) );
 	}
 
 	public function test_featured_image_setting_is_honored() {
@@ -250,6 +287,45 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 		$this->assertSame( 'publish', $copies[0]->post_status );
 		$this->assertContains( $new_id, $lookup_ids );
 		$this->assertContains( (int) $copies[0]->ID, $lookup_ids );
+	}
+
+	public function test_private_variations_keep_private_status() {
+		$this->register_product_post_types();
+
+		$settings                       = Oli_DP_Settings::get_settings();
+		$settings['enabled_post_types'] = array( 'post', 'page', 'product' );
+		$settings['copy_status']        = false;
+		update_option( 'oli_dp_settings', $settings );
+
+		$product_id = self::factory()->post->create(
+			array(
+				'post_type'   => 'product',
+				'post_status' => 'publish',
+				'post_title'  => 'Variable Shirt',
+			)
+		);
+
+		self::factory()->post->create(
+			array(
+				'post_type'   => 'product_variation',
+				'post_status' => 'private',
+				'post_parent' => $product_id,
+				'post_title'  => 'Variable Shirt - Hidden',
+			)
+		);
+
+		$new_id = Oli_DP_Duplicator::duplicate( $product_id, 'clone' );
+		$copies = get_posts(
+			array(
+				'post_type'      => 'product_variation',
+				'post_parent'    => $new_id,
+				'post_status'    => 'any',
+				'posts_per_page' => -1,
+			)
+		);
+
+		$this->assertCount( 1, $copies );
+		$this->assertSame( 'private', $copies[0]->post_status );
 	}
 
 	public function test_title_prefix_and_suffix_spaces_are_preserved() {

@@ -460,11 +460,28 @@ if ( false !== strpos( $plugin_php, "pagenow ) && 'post.php' === \$pagenow" ) ||
 }
 
 ++$total_tests;
-if ( false !== strpos( $plugin_php, 'wp_delete_post' ) && false === strpos( $plugin_php, 'wp_trash_post' ) ) {
-	oli_dp_test_pass( 'Rewrite copies are permanently deleted after merge' );
+if ( false !== strpos( $plugin_php, 'wp_delete_post' ) && false === strpos( $plugin_php, 'wp_trash_post' ) && false !== strpos( $plugin_php, 'wp_after_insert_post' ) ) {
+	oli_dp_test_pass( 'Rewrite copies are deleted after save completes' );
 	++$passed_tests;
 } else {
-	oli_dp_test_fail( 'Rewrite merge still uses trash instead of permanent delete' );
+	oli_dp_test_fail( 'Rewrite merge is not deferred until after save' );
+}
+
+++$total_tests;
+if ( false !== strpos( $plugin_php, 'gmt_mysql_is_future' ) ) {
+	oli_dp_test_pass( 'Scheduled republish compares GMT timestamps' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'GMT schedule comparison helper missing' );
+}
+
+++$total_tests;
+$uninstall_php = file_get_contents( $plugin_root . '/uninstall.php' );
+if ( false === strpos( $uninstall_php, "'_dp_original'" ) && false !== strpos( $uninstall_php, '_oli_dp_original_post' ) ) {
+	oli_dp_test_pass( 'Uninstall leaves shared _dp_original meta' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Uninstall still deletes shared _dp_original meta' );
 }
 
 ++$total_tests;

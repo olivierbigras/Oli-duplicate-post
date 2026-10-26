@@ -4,7 +4,7 @@ Tags: duplicate, clone, copy, post, page
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.0.1
+Stable tag: 1.0.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -140,6 +140,13 @@ This plugin does not call any external service. Clone, New Draft, and Rewrite & 
 
 == Changelog ==
 
+= 1.0.2 =
+* Rewrite & Republish merges after save and deletes the copy after the REST/editor/cron response
+* Variation copies keep their original status
+* WooCommerce lookup rows are written through the product CRUD API
+* Uninstall no longer deletes shared `_dp_original` meta
+* Scheduled republish compares GMT timestamps so a +60s schedule is not merged early
+
 = 1.0.1 =
 * Product variations are published and synced so the copy can be purchased
 * Title prefix and suffix keep leading and trailing spaces
@@ -174,6 +181,9 @@ This plugin does not call any external service. Clone, New Draft, and Rewrite & 
 * Initial release
 
 == Upgrade Notice ==
+
+= 1.0.2 =
+Fixes REST/editor republish notices, preserves private variation status, writes WooCommerce lookup rows, and leaves Yoast `_dp_original` meta on uninstall.
 
 = 1.0.1 =
 Fixes purchasable variable-product copies, title spacing, attachment copies, 403s on forged URLs, and admin-bar list-screen links.

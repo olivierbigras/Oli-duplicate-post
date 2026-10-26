@@ -132,9 +132,11 @@ class Oli_DP_WooCommerce {
 				array(
 					'ID'          => $new_variation_id,
 					'post_parent' => $new_id,
-					'post_status' => 'publish',
+					'post_status' => $variation->post_status,
 				)
 			);
+
+			self::save_wc_product( $new_variation_id );
 		}
 
 		self::sync_variable_product( $new_id );
@@ -213,18 +215,54 @@ class Oli_DP_WooCommerce {
 	 * @param int $product_id Product or variation ID.
 	 */
 	private static function update_product_lookup_table( $product_id ) {
+		if ( self::save_wc_product( $product_id ) ) {
+			return;
+		}
+
 		if ( function_exists( 'wc_update_product_lookup_tables_for_product' ) ) {
 			wc_update_product_lookup_tables_for_product( $product_id );
 			return;
 		}
 
-		if ( ! class_exists( 'WC_Data_Store' ) ) {
+		if ( ! class_exists( 'WC_Data_Store' ) || ! is_callable( array( 'WC_Data_Store', 'load' ) ) ) {
 			return;
 		}
 
-		$data_store = WC_Data_Store::load( 'product' );
+		$store_name = 'product_variation' === get_post_type( $product_id ) ? 'product-variation' : 'product';
+
+		try {
+			$data_store = WC_Data_Store::load( $store_name );
+		} catch ( \Exception $exception ) {
+			return;
+		}
+
 		if ( $data_store && is_callable( array( $data_store, 'update_lookup_table' ) ) ) {
 			$data_store->update_lookup_table( $product_id, 'wc_product_meta_lookup' );
 		}
+	}
+
+	/**
+	 * Persist a product or variation through the WooCommerce CRUD API.
+	 *
+	 * `$product->save()` writes `wc_product_meta_lookup` the same way native
+	 * WooCommerce duplication does.
+	 *
+	 * @since 1.0.2
+	 *
+	 * @param int $product_id Product or variation ID.
+	 * @return bool True when WooCommerce saved the object.
+	 */
+	private static function save_wc_product( $product_id ) {
+		if ( ! function_exists( 'wc_get_product' ) ) {
+			return false;
+		}
+
+		$product = wc_get_product( $product_id );
+		if ( ! $product || ! is_callable( array( $product, 'save' ) ) ) {
+			return false;
+		}
+
+		$product->save();
+		return true;
 	}
 }

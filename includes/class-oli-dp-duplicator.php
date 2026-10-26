@@ -188,7 +188,7 @@ class Oli_DP_Duplicator {
 		}
 
 		if ( 'product_variation' === $post->post_type ) {
-			$new_post_data['post_status'] = 'publish';
+			$new_post_data['post_status'] = $post->post_status;
 		}
 
 		if ( ! empty( $settings['copy_slug'] ) && 'rewrite_republish' !== $mode ) {

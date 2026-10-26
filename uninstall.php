@@ -15,13 +15,14 @@ delete_option( 'oli_dp_settings' );
 
 global $wpdb;
 
+// Do not delete `_dp_original`: Yoast Duplicate Post uses the same key.
 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 $wpdb->query(
 	$wpdb->prepare(
 		"DELETE FROM {$wpdb->postmeta} WHERE meta_key IN (%s, %s, %s)",
 		'_oli_dp_original_post',
 		'_oli_dp_rewrite_copy',
-		'_dp_original'
+		'_oli_dp_scheduled_gmt'
 	)
 );
 

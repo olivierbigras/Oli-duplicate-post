@@ -53,8 +53,18 @@ class Oli_DP_Utils_Test extends TestCase {
 
 		$this->assertContains( '_oli_dp_original_post', $keys );
 		$this->assertContains( '_oli_dp_rewrite_copy', $keys );
+		$this->assertContains( '_oli_dp_scheduled_gmt', $keys );
 		$this->assertContains( '_dp_original', $keys );
 		$this->assertContains( '_thumbnail_id', $keys );
+	}
+
+	public function test_gmt_mysql_is_future_uses_utc() {
+		$now = 1700000000;
+
+		$this->assertTrue( Oli_DP_Utils::gmt_mysql_is_future( gmdate( 'Y-m-d H:i:s', $now + 60 ), $now ) );
+		$this->assertFalse( Oli_DP_Utils::gmt_mysql_is_future( gmdate( 'Y-m-d H:i:s', $now ), $now ) );
+		$this->assertFalse( Oli_DP_Utils::gmt_mysql_is_future( gmdate( 'Y-m-d H:i:s', $now - 1 ), $now ) );
+		$this->assertFalse( Oli_DP_Utils::gmt_mysql_is_future( '0000-00-00 00:00:00', $now ) );
 	}
 
 	public function test_sanitize_title_affix_keeps_leading_and_trailing_spaces() {

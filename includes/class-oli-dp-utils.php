@@ -104,6 +104,40 @@ class Oli_DP_Utils {
 	}
 
 	/**
+	 * Whether a MySQL GMT datetime is still in the future (UTC).
+	 *
+	 * Uses `time()` and `mysql2date( 'U', $gmt, false )` so local timezone
+	 * offsets cannot make a +60s schedule look like "now".
+	 *
+	 * @since 1.0.2
+	 *
+	 * @param string   $gmt MySQL GMT datetime.
+	 * @param int|null $now UTC timestamp, or null for time().
+	 * @return bool
+	 */
+	public static function gmt_mysql_is_future( $gmt, $now = null ) {
+		if ( ! is_string( $gmt ) || '' === $gmt || '0000-00-00 00:00:00' === $gmt ) {
+			return false;
+		}
+
+		if ( null === $now ) {
+			$now = time();
+		}
+
+		if ( function_exists( 'mysql2date' ) ) {
+			$timestamp = mysql2date( 'U', $gmt, false );
+		} else {
+			$timestamp = strtotime( $gmt . ' UTC' );
+		}
+
+		if ( ! $timestamp ) {
+			return false;
+		}
+
+		return (int) $timestamp > (int) $now;
+	}
+
+	/**
 	 * Sanitize a title prefix or suffix without trimming spaces.
 	 *
 	 * `sanitize_text_field()` strips leading and trailing whitespace, which
@@ -172,6 +206,7 @@ class Oli_DP_Utils {
 			'_dp_original',
 			'_oli_dp_original_post',
 			'_oli_dp_rewrite_copy',
+			'_oli_dp_scheduled_gmt',
 		);
 	}
 

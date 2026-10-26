@@ -38,12 +38,31 @@ class Oli_DP_Rewrite_Republish {
 	private static $redirect_original_id = 0;
 
 	/**
+	 * Rewrite copies waiting for wp_after_insert_post before merge.
+	 *
+	 * @since 1.0.2
+	 * @var array<int, int>
+	 */
+	private static $pending_merges = array();
+
+	/**
+	 * Rewrite copies to delete after the save response is finished.
+	 *
+	 * @since 1.0.2
+	 * @var int[]
+	 */
+	private static $pending_deletes = array();
+
+	/**
 	 * Initialize the class.
 	 *
 	 * @since 1.0.0
 	 */
 	public static function init() {
 		add_action( 'transition_post_status', array( __CLASS__, 'handle_publish' ), 10, 3 );
+		add_action( 'wp_after_insert_post', array( __CLASS__, 'merge_after_save' ), 20, 3 );
+		add_filter( 'rest_post_dispatch', array( __CLASS__, 'after_rest_response' ), 99 );
+		add_action( 'shutdown', array( __CLASS__, 'delete_merged_copies' ), 20 );
 		add_action( 'admin_notices', array( __CLASS__, 'show_rewrite_notice' ) );
 		add_filter( 'display_post_states', array( __CLASS__, 'add_post_state' ), 10, 2 );
 		add_action( 'add_meta_boxes', array( __CLASS__, 'add_schedule_meta_box' ) );
@@ -52,7 +71,11 @@ class Oli_DP_Rewrite_Republish {
 	}
 
 	/**
-	 * Handle post publish for rewrite & republish.
+	 * Queue a rewrite merge when a copy is published.
+	 *
+	 * Merge and deletion wait until after the save finishes so REST, the
+	 * editor, and cron can finish reading the copy. A still-future GMT date
+	 * is treated as scheduled and is not merged.
 	 *
 	 * @since 1.0.0
 	 *
@@ -67,13 +90,21 @@ class Oli_DP_Rewrite_Republish {
 			return;
 		}
 
-		// Scheduled republish waits until the copy actually publishes.
+		if ( 'future' === $new_status && $post->post_date_gmt && '0000-00-00 00:00:00' !== $post->post_date_gmt ) {
+			update_post_meta( $post->ID, '_oli_dp_scheduled_gmt', $post->post_date_gmt );
+			return;
+		}
+
 		if ( 'publish' !== $new_status ) {
 			return;
 		}
 
 		$original_post_id = absint( get_post_meta( $post->ID, '_oli_dp_original_post', true ) );
 		if ( ! $original_post_id ) {
+			return;
+		}
+
+		if ( self::has_future_publish_date( $post ) ) {
 			return;
 		}
 
@@ -88,8 +119,112 @@ class Oli_DP_Rewrite_Republish {
 			}
 		}
 
+		self::$pending_merges[ (int) $post->ID ] = $original_post_id;
+	}
+
+	/**
+	 * Merge a queued rewrite copy after wp_insert_post() has finished.
+	 *
+	 * The copy is left in place until {@see delete_merged_copies()} so the
+	 * REST controller and editor can still read a valid post (`id` stays set).
+	 *
+	 * @since 1.0.2
+	 *
+	 * @param int     $post_id Post ID.
+	 * @param WP_Post $post    Post object.
+	 * @param bool    $update  Whether this is an existing post.
+	 */
+	public static function merge_after_save( $post_id, $post, $update ) {
+		unset( $update );
+
+		$post_id = (int) $post_id;
+		if ( ! isset( self::$pending_merges[ $post_id ] ) ) {
+			return;
+		}
+
+		$original_post_id = self::$pending_merges[ $post_id ];
+		unset( self::$pending_merges[ $post_id ] );
+
+		$fresh = get_post( $post_id );
+		if ( ! $fresh instanceof WP_Post ) {
+			$fresh = $post instanceof WP_Post ? $post : null;
+		}
+
+		if ( ! $fresh || 'publish' !== $fresh->post_status || self::has_future_publish_date( $fresh ) ) {
+			return;
+		}
+
+		self::run_merge( $post_id, $original_post_id );
+	}
+
+	/**
+	 * Delete merged copies after a REST response has been built.
+	 *
+	 * @since 1.0.2
+	 *
+	 * @param mixed $response REST response.
+	 * @return mixed
+	 */
+	public static function after_rest_response( $response ) {
+		self::finish_pending_work();
+		return $response;
+	}
+
+	/**
+	 * Merge leftover copies and permanently delete those already merged.
+	 *
+	 * @since 1.0.2
+	 */
+	public static function delete_merged_copies() {
+		self::finish_pending_work();
+	}
+
+	/**
+	 * Run queued merges (if the after-insert hook was skipped) then delete.
+	 *
+	 * @since 1.0.2
+	 */
+	private static function finish_pending_work() {
+		if ( ! empty( self::$pending_merges ) ) {
+			foreach ( self::$pending_merges as $rewrite_id => $original_id ) {
+				$post = get_post( $rewrite_id );
+				if ( ! $post || 'publish' !== $post->post_status || self::has_future_publish_date( $post ) ) {
+					continue;
+				}
+				self::run_merge( $rewrite_id, $original_id );
+			}
+			self::$pending_merges = array();
+		}
+
+		if ( empty( self::$pending_deletes ) ) {
+			return;
+		}
+
+		$ids                   = array_unique( array_map( 'intval', self::$pending_deletes ) );
+		self::$pending_deletes = array();
+
+		foreach ( $ids as $rewrite_id ) {
+			if ( get_post( $rewrite_id ) ) {
+				wp_delete_post( $rewrite_id, true );
+			}
+		}
+	}
+
+	/**
+	 * Merge a rewrite copy into its original and queue the copy for deletion.
+	 *
+	 * @since 1.0.2
+	 *
+	 * @param int $rewrite_id  Rewrite copy ID.
+	 * @param int $original_id Original post ID.
+	 */
+	private static function run_merge( $rewrite_id, $original_id ) {
+		if ( self::$merging ) {
+			return;
+		}
+
 		self::$merging = true;
-		$merged        = self::merge_to_original( $post->ID, $original_post_id );
+		$merged        = self::merge_to_original( $rewrite_id, $original_id );
 		self::$merging = false;
 
 		if ( ! $merged ) {
@@ -97,20 +232,38 @@ class Oli_DP_Rewrite_Republish {
 		}
 
 		if ( is_user_logged_in() ) {
-			set_transient( 'oli_dp_republish_success_' . get_current_user_id(), $original_post_id, 60 );
+			set_transient( 'oli_dp_republish_success_' . get_current_user_id(), $original_id, 60 );
 		}
 
 		if ( is_admin() && ! wp_doing_cron() && ! wp_doing_ajax() && ! self::is_rest_request() ) {
-			self::$redirect_original_id = $original_post_id;
+			self::$redirect_original_id = $original_id;
 		}
+	}
+
+	/**
+	 * Whether a rewrite copy still has a future GMT publish date.
+	 *
+	 * Compares UTC (`time()`) to `post_date_gmt` or the stored schedule so a
+	 * +60s REST schedule is not merged when status flips to publish early.
+	 *
+	 * @since 1.0.2
+	 *
+	 * @param WP_Post $post Post object.
+	 * @return bool
+	 */
+	private static function has_future_publish_date( $post ) {
+		$scheduled = get_post_meta( $post->ID, '_oli_dp_scheduled_gmt', true );
+		$gmt       = $scheduled ? $scheduled : $post->post_date_gmt;
+
+		return Oli_DP_Utils::gmt_mysql_is_future( $gmt );
 	}
 
 	/**
 	 * Merge rewrite copy to original post.
 	 *
 	 * The original permalink and publish date are preserved so the live URL
-	 * does not change. The working copy is permanently deleted after a
-	 * successful merge.
+	 * does not change. The working copy is queued for permanent deletion
+	 * after the current save (REST/editor/cron) finishes.
 	 *
 	 * @since 1.0.0
 	 *
@@ -228,9 +381,9 @@ class Oli_DP_Rewrite_Republish {
 
 		delete_post_meta( $original_post_id, '_oli_dp_rewrite_copy' );
 		delete_post_meta( $rewrite_post_id, '_oli_dp_original_post' );
-		delete_post_meta( $rewrite_post_id, '_dp_original' );
+		delete_post_meta( $rewrite_post_id, '_oli_dp_scheduled_gmt' );
 
-		wp_delete_post( $rewrite_post_id, true );
+		self::$pending_deletes[] = (int) $rewrite_post_id;
 
 		/**
 		 * Fires after a rewrite copy is merged back to the original.
