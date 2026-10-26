@@ -198,6 +198,7 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 				'post_status'   => 'future',
 				'post_date'     => $local,
 				'post_date_gmt' => $gmt,
+				'edit_date'     => true,
 			)
 		);
 

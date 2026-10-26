@@ -252,10 +252,22 @@ class Oli_DP_Rewrite_Republish {
 	 * @return bool
 	 */
 	private static function has_future_publish_date( $post ) {
-		$scheduled = get_post_meta( $post->ID, '_oli_dp_scheduled_gmt', true );
-		$gmt       = $scheduled ? $scheduled : $post->post_date_gmt;
+		$candidates = array(
+			get_post_meta( $post->ID, '_oli_dp_scheduled_gmt', true ),
+			$post->post_date_gmt,
+		);
 
-		return Oli_DP_Utils::gmt_mysql_is_future( $gmt );
+		if ( $post->post_date && function_exists( 'get_gmt_from_date' ) ) {
+			$candidates[] = get_gmt_from_date( $post->post_date );
+		}
+
+		foreach ( $candidates as $gmt ) {
+			if ( Oli_DP_Utils::gmt_mysql_is_future( $gmt ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
