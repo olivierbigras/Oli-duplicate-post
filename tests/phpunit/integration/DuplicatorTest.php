@@ -287,6 +287,7 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 	}
 
 	public function test_rest_republish_defers_delete_and_schedules_cron() {
+		$previous_uri           = isset( $_SERVER['REQUEST_URI'] ) ? $_SERVER['REQUEST_URI'] : '';
 		$_SERVER['REQUEST_URI'] = '/wp-json/wp/v2/posts/1';
 
 		$original_id = self::factory()->post->create(
@@ -314,7 +315,7 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 		Oli_DP_Rewrite_Republish::delete_rewrite_copy( $rewrite_id );
 		$this->assertNull( get_post( $rewrite_id ) );
 
-		unset( $_SERVER['REQUEST_URI'] );
+		$_SERVER['REQUEST_URI'] = $previous_uri;
 	}
 
 	public function test_featured_image_setting_is_honored() {
