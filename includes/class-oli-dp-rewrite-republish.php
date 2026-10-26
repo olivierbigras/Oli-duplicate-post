@@ -62,12 +62,22 @@ class Oli_DP_Rewrite_Republish {
 	private static $pending_delete_ids = null;
 
 	/**
+	 * Transient key for pending-delete copy IDs.
+	 *
+	 * @since 1.0.5
+	 * @var string
+	 */
+	const PENDING_DELETE_IDS_TRANSIENT = 'oli_dp_pending_delete_ids';
+
+	/**
 	 * Initialize the class.
 	 *
 	 * @since 1.0.0
 	 */
 	public static function init() {
 		add_action( 'transition_post_status', array( __CLASS__, 'handle_publish' ), 10, 3 );
+		add_filter( 'wp_insert_post_data', array( __CLASS__, 'prevent_pending_delete_publish' ), 10, 2 );
+		add_action( 'rest_api_init', array( __CLASS__, 'register_rest_guards' ) );
 		add_action( 'wp_after_insert_post', array( __CLASS__, 'merge_after_save' ), 20, 3 );
 		add_filter( 'rest_post_dispatch', array( __CLASS__, 'after_rest_response' ), 99 );
 		add_action( 'admin_init', array( __CLASS__, 'queue_delete_after_metabox' ) );
@@ -82,6 +92,9 @@ class Oli_DP_Rewrite_Republish {
 		add_action( 'add_meta_boxes', array( __CLASS__, 'add_schedule_meta_box' ) );
 		add_action( 'post_submitbox_misc_actions', array( __CLASS__, 'add_publish_box_info' ) );
 		add_filter( 'redirect_post_location', array( __CLASS__, 'redirect_after_merge' ) );
+		add_action( 'added_post_meta', array( __CLASS__, 'maybe_invalidate_pending_delete_cache' ), 10, 3 );
+		add_action( 'updated_post_meta', array( __CLASS__, 'maybe_invalidate_pending_delete_cache' ), 10, 3 );
+		add_action( 'deleted_post_meta', array( __CLASS__, 'maybe_invalidate_pending_delete_cache' ), 10, 3 );
 	}
 
 	/**
@@ -99,6 +112,13 @@ class Oli_DP_Rewrite_Republish {
 	 */
 	public static function handle_publish( $new_status, $old_status, $post ) {
 		if ( self::$merging || ! $post instanceof WP_Post ) {
+			return;
+		}
+
+		if ( self::is_pending_delete_copy( $post->ID ) ) {
+			if ( self::is_public_status( $new_status ) ) {
+				self::hide_merged_copy( (int) $post->ID );
+			}
 			return;
 		}
 
@@ -140,6 +160,84 @@ class Oli_DP_Rewrite_Republish {
 		}
 
 		self::$pending_merges[ (int) $post->ID ] = $original_post_id;
+	}
+
+	/**
+	 * Force a merged copy back to draft before wp_insert_post() writes publish.
+	 *
+	 * Covers classic editor, cron, and REST updates that still call wp_insert_post().
+	 *
+	 * @since 1.0.5
+	 *
+	 * @param array $data    Sanitized post data.
+	 * @param array $postarr Raw post data.
+	 * @return array
+	 */
+	public static function prevent_pending_delete_publish( $data, $postarr ) {
+		$post_id = isset( $postarr['ID'] ) ? absint( $postarr['ID'] ) : 0;
+		if ( ! $post_id || empty( $data['post_status'] ) ) {
+			return $data;
+		}
+
+		if ( ! self::is_public_status( $data['post_status'] ) || ! self::is_pending_delete_copy( $post_id ) ) {
+			return $data;
+		}
+
+		$data['post_status'] = 'draft';
+
+		return $data;
+	}
+
+	/**
+	 * Register REST insert guards for every REST-enabled post type.
+	 *
+	 * @since 1.0.5
+	 */
+	public static function register_rest_guards() {
+		$post_types = get_post_types( array( 'show_in_rest' => true ), 'names' );
+
+		foreach ( $post_types as $post_type ) {
+			add_filter( 'rest_pre_insert_' . $post_type, array( __CLASS__, 'rest_prevent_pending_delete_publish' ), 10, 2 );
+		}
+	}
+
+	/**
+	 * Keep a merged rewrite copy as draft when REST tries to publish it.
+	 *
+	 * @since 1.0.5
+	 *
+	 * @param stdClass        $prepared_post Prepared post data.
+	 * @param WP_REST_Request $request       REST request.
+	 * @return stdClass
+	 */
+	public static function rest_prevent_pending_delete_publish( $prepared_post, $request ) {
+		if ( ! is_object( $prepared_post ) ) {
+			return $prepared_post;
+		}
+
+		$post_id = 0;
+		if ( isset( $prepared_post->ID ) ) {
+			$post_id = absint( $prepared_post->ID );
+		} elseif ( $request instanceof WP_REST_Request ) {
+			$post_id = absint( $request->get_param( 'id' ) );
+		}
+
+		if ( ! $post_id || ! self::is_pending_delete_copy( $post_id ) ) {
+			return $prepared_post;
+		}
+
+		$status = '';
+		if ( isset( $prepared_post->post_status ) ) {
+			$status = $prepared_post->post_status;
+		} elseif ( $request instanceof WP_REST_Request ) {
+			$status = (string) $request->get_param( 'status' );
+		}
+
+		if ( self::is_public_status( $status ) ) {
+			$prepared_post->post_status = 'draft';
+		}
+
+		return $prepared_post;
 	}
 
 	/**
@@ -248,12 +346,12 @@ class Oli_DP_Rewrite_Republish {
 		);
 
 		clean_post_cache( $rewrite_id );
-		self::$pending_delete_ids = null;
 	}
 
 	/**
-	 * Exclude merged rewrite copies from listings.
+	 * Exclude merged rewrite copies from front-end, REST, and sitemap listings.
 	 *
+	 * Admin list screens and other wp-admin queries are left unchanged.
 	 * Direct get_post() lookups (Gutenberg, meta-box-loader) are unchanged.
 	 *
 	 * @since 1.0.4
@@ -266,6 +364,10 @@ class Oli_DP_Rewrite_Republish {
 		}
 
 		if ( $query->get( 'oli_dp_include_pending_delete' ) ) {
+			return;
+		}
+
+		if ( ! self::query_should_exclude_merged_copies( $query ) ) {
 			return;
 		}
 
@@ -343,7 +445,7 @@ class Oli_DP_Rewrite_Republish {
 			}
 		}
 
-		self::$pending_delete_ids = null;
+		self::invalidate_pending_delete_ids_cache();
 
 		return $deleted;
 	}
@@ -351,12 +453,21 @@ class Oli_DP_Rewrite_Republish {
 	/**
 	 * IDs of merged copies marked for deletion.
 	 *
+	 * Cached in a transient and in a per-request static. The transient is
+	 * invalidated when a copy is marked pending-delete or deleted.
+	 *
 	 * @since 1.0.4
 	 *
 	 * @return int[]
 	 */
 	public static function get_pending_delete_ids() {
 		if ( null !== self::$pending_delete_ids ) {
+			return self::$pending_delete_ids;
+		}
+
+		$cached = get_transient( self::PENDING_DELETE_IDS_TRANSIENT );
+		if ( false !== $cached && is_array( $cached ) ) {
+			self::$pending_delete_ids = self::normalize_id_list( $cached );
 			return self::$pending_delete_ids;
 		}
 
@@ -370,13 +481,37 @@ class Oli_DP_Rewrite_Republish {
 			)
 		);
 
-		self::$pending_delete_ids = array_values(
-			array_filter(
-				array_map( 'intval', (array) $ids )
-			)
-		);
+		self::$pending_delete_ids = self::normalize_id_list( $ids );
+		set_transient( self::PENDING_DELETE_IDS_TRANSIENT, self::$pending_delete_ids, HOUR_IN_SECONDS );
 
 		return self::$pending_delete_ids;
+	}
+
+	/**
+	 * Drop the pending-delete ID caches.
+	 *
+	 * @since 1.0.5
+	 */
+	public static function invalidate_pending_delete_ids_cache() {
+		self::$pending_delete_ids = null;
+		delete_transient( self::PENDING_DELETE_IDS_TRANSIENT );
+	}
+
+	/**
+	 * Invalidate caches when `_oli_dp_pending_delete` is written or removed.
+	 *
+	 * @since 1.0.5
+	 *
+	 * @param mixed  $meta_id  Meta ID or list of IDs.
+	 * @param int    $post_id  Post ID.
+	 * @param string $meta_key Meta key.
+	 */
+	public static function maybe_invalidate_pending_delete_cache( $meta_id, $post_id, $meta_key ) {
+		unset( $meta_id, $post_id );
+
+		if ( '_oli_dp_pending_delete' === $meta_key ) {
+			self::invalidate_pending_delete_ids_cache();
+		}
 	}
 
 	/**
@@ -428,7 +563,7 @@ class Oli_DP_Rewrite_Republish {
 
 		self::unschedule_copy_deletion( $rewrite_id );
 		wp_delete_post( $rewrite_id, true );
-		self::$pending_delete_ids = null;
+		self::invalidate_pending_delete_ids_cache();
 	}
 
 	/**
@@ -492,7 +627,7 @@ class Oli_DP_Rewrite_Republish {
 			wp_delete_post( $rewrite_id, true );
 		}
 
-		self::$pending_delete_ids = null;
+		self::invalidate_pending_delete_ids_cache();
 	}
 
 	/**
@@ -1135,5 +1270,89 @@ class Oli_DP_Rewrite_Republish {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Whether this query should hide merged rewrite copies.
+	 *
+	 * Limited to front-end, REST, and sitemap queries. wp-admin list
+	 * screens and other admin queries are left alone.
+	 *
+	 * @since 1.0.5
+	 *
+	 * @param WP_Query $query Query.
+	 * @return bool
+	 */
+	private static function query_should_exclude_merged_copies( $query ) {
+		if ( self::is_rest_request() || self::is_sitemap_query( $query ) ) {
+			return true;
+		}
+
+		return ! is_admin();
+	}
+
+	/**
+	 * Whether this query is a sitemap listing.
+	 *
+	 * @since 1.0.5
+	 *
+	 * @param WP_Query $query Query.
+	 * @return bool
+	 */
+	private static function is_sitemap_query( $query ) {
+		if ( $query->get( 'sitemap' ) ) {
+			return true;
+		}
+
+		if ( isset( $GLOBALS['wp'] ) && is_object( $GLOBALS['wp'] ) && ! empty( $GLOBALS['wp']->query_vars['sitemap'] ) ) {
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Whether a post is a merged rewrite copy waiting to be deleted.
+	 *
+	 * @since 1.0.5
+	 *
+	 * @param int $post_id Post ID.
+	 * @return bool
+	 */
+	private static function is_pending_delete_copy( $post_id ) {
+		$post_id = absint( $post_id );
+		if ( ! $post_id ) {
+			return false;
+		}
+
+		return (bool) get_post_meta( $post_id, '_oli_dp_pending_delete', true );
+	}
+
+	/**
+	 * Whether a status would make a merged copy publicly visible.
+	 *
+	 * @since 1.0.5
+	 *
+	 * @param string $status Post status.
+	 * @return bool
+	 */
+	private static function is_public_status( $status ) {
+		return in_array( $status, array( 'publish', 'future' ), true );
+	}
+
+	/**
+	 * Normalize a list of post IDs.
+	 *
+	 * @since 1.0.5
+	 *
+	 * @param mixed $ids Raw IDs.
+	 * @return int[]
+	 */
+	private static function normalize_id_list( $ids ) {
+		return array_values(
+			array_filter(
+				array_map( 'intval', (array) $ids )
+			)
+		);
 	}
 }

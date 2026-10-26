@@ -4,7 +4,7 @@ Tags: duplicate, clone, copy, post, page
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.0.4
+Stable tag: 1.0.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -140,6 +140,11 @@ This plugin does not call any external service. Clone, New Draft, and Rewrite & 
 
 == Changelog ==
 
+= 1.0.5 =
+* Merged rewrite copies cannot be published again (REST, editor, or status transition) while `_oli_dp_pending_delete` is set
+* Pending-delete copy IDs are cached in a transient and refreshed when a copy is marked or deleted
+* `pre_get_posts` exclusion applies only to front-end, REST, and sitemap queries
+
 = 1.0.4 =
 * Merged rewrite copies are hidden immediately, excluded from queries and sitemaps, and cleaned up after 5 minutes even when WP-Cron is disabled
 * Block editor shows a persistent rewrite notice, a pre-publish overwrite warning, and a Republish button
@@ -191,6 +196,9 @@ This plugin does not call any external service. Clone, New Draft, and Rewrite & 
 * Initial release
 
 == Upgrade Notice ==
+
+= 1.0.5 =
+Stops republishing already-merged rewrite copies, caches pending-delete IDs, and limits query exclusion to the public site, REST, and sitemaps.
 
 = 1.0.4 =
 Hides merged rewrite copies immediately, adds block-editor rewrite notices, and marks copies in the posts list.

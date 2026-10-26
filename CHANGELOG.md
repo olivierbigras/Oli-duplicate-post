@@ -5,6 +5,17 @@ All notable changes to Oli Duplicate Post will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.5] - 2026-10-26
+
+### Changed
+- `pre_get_posts` hides merged copies on front-end, REST, and sitemap queries only (not wp-admin lists)
+
+### Fixed
+- Publishing a copy that is already merged and still has `_oli_dp_pending_delete` is refused (kept as draft), including REST (`rest_pre_insert_*`, `wp_insert_post_data`, `transition_post_status`)
+
+### Performance
+- `get_pending_delete_ids()` is cached in the `oli_dp_pending_delete_ids` transient and invalidated when a copy is marked pending-delete or deleted
+
 ## [1.0.4] - 2026-10-26
 
 ### Added
@@ -115,6 +126,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release of Oli Duplicate Post
 
+[1.0.5]: https://github.com/olivierbigras/Oli-duplicate-post/releases/tag/1.0.5
 [1.0.4]: https://github.com/olivierbigras/Oli-duplicate-post/releases/tag/1.0.4
 [1.0.3]: https://github.com/olivierbigras/Oli-duplicate-post/releases/tag/1.0.3
 [1.0.2]: https://github.com/olivierbigras/Oli-duplicate-post/releases/tag/1.0.2

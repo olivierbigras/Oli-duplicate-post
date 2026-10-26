@@ -35,6 +35,8 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 	public function set_up() {
 		parent::set_up();
 
+		Oli_DP_Rewrite_Republish::invalidate_pending_delete_ids_cache();
+
 		$this->user_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
 		wp_set_current_user( $this->user_id );
 
@@ -617,6 +619,161 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 			sprintf( 'Rewrite in progress (draft #%d)', $rewrite_id ),
 			$original_states['oli_dp_original']
 		);
+	}
+
+	public function test_merged_copy_cannot_be_published_again() {
+		$previous_uri           = isset( $_SERVER['REQUEST_URI'] ) ? $_SERVER['REQUEST_URI'] : '';
+		$_SERVER['REQUEST_URI'] = '/wp-json/wp/v2/posts/1';
+
+		$original_id = self::factory()->post->create(
+			array(
+				'post_title'   => 'Live Article',
+				'post_content' => 'Old body',
+				'post_status'  => 'publish',
+			)
+		);
+
+		$rewrite_id = Oli_DP_Duplicator::duplicate( $original_id, 'rewrite_republish' );
+		wp_update_post(
+			array(
+				'ID'           => $rewrite_id,
+				'post_title'   => 'Updated Article',
+				'post_content' => 'New body',
+			)
+		);
+		wp_publish_post( $rewrite_id );
+
+		$this->assertSame( 'Updated Article', get_post( $original_id )->post_title );
+		$this->assertSame( 'draft', get_post_status( $rewrite_id ) );
+		$this->assertNotEmpty( get_post_meta( $rewrite_id, '_oli_dp_pending_delete', true ) );
+		$this->assertSame( '', get_post_meta( $rewrite_id, '_oli_dp_original_post', true ) );
+
+		$prepared          = new stdClass();
+		$prepared->ID      = $rewrite_id;
+		$prepared->post_status = 'publish';
+		$request           = new WP_REST_Request( 'POST', '/wp/v2/posts/' . $rewrite_id );
+		$request->set_param( 'id', $rewrite_id );
+		$request->set_param( 'status', 'publish' );
+
+		$guarded = Oli_DP_Rewrite_Republish::rest_prevent_pending_delete_publish( $prepared, $request );
+		$this->assertSame( 'draft', $guarded->post_status );
+
+		$filtered = Oli_DP_Rewrite_Republish::prevent_pending_delete_publish(
+			array(
+				'post_status' => 'publish',
+			),
+			array(
+				'ID' => $rewrite_id,
+			)
+		);
+		$this->assertSame( 'draft', $filtered['post_status'] );
+
+		wp_update_post(
+			array(
+				'ID'          => $rewrite_id,
+				'post_status' => 'publish',
+			)
+		);
+
+		$this->assertSame( 'draft', get_post_status( $rewrite_id ) );
+		$this->assertSame( 'Updated Article', get_post( $original_id )->post_title );
+		$this->assertSame( 'New body', get_post( $original_id )->post_content );
+
+		Oli_DP_Rewrite_Republish::handle_publish( 'publish', 'draft', get_post( $rewrite_id ) );
+		$this->assertSame( 'draft', get_post_status( $rewrite_id ) );
+
+		$_SERVER['REQUEST_URI'] = $previous_uri;
+	}
+
+	public function test_pending_delete_ids_are_cached_in_a_transient() {
+		$previous_uri           = isset( $_SERVER['REQUEST_URI'] ) ? $_SERVER['REQUEST_URI'] : '';
+		$_SERVER['REQUEST_URI'] = '/wp-json/wp/v2/posts/1';
+
+		$this->assertSame( array(), Oli_DP_Rewrite_Republish::get_pending_delete_ids() );
+		$this->assertSame( array(), get_transient( Oli_DP_Rewrite_Republish::PENDING_DELETE_IDS_TRANSIENT ) );
+
+		$original_id = self::factory()->post->create(
+			array(
+				'post_title'   => 'Live Article',
+				'post_content' => 'Old body',
+				'post_status'  => 'publish',
+			)
+		);
+
+		$rewrite_id = Oli_DP_Duplicator::duplicate( $original_id, 'rewrite_republish' );
+		wp_update_post(
+			array(
+				'ID'           => $rewrite_id,
+				'post_content' => 'New body',
+			)
+		);
+		wp_publish_post( $rewrite_id );
+
+		$ids = Oli_DP_Rewrite_Republish::get_pending_delete_ids();
+		$this->assertContains( $rewrite_id, $ids );
+		$this->assertSame( $ids, get_transient( Oli_DP_Rewrite_Republish::PENDING_DELETE_IDS_TRANSIENT ) );
+
+		$property = new ReflectionProperty( 'Oli_DP_Rewrite_Republish', 'pending_delete_ids' );
+		$property->setAccessible( true );
+		$property->setValue( null, null );
+
+		$this->assertSame( $ids, Oli_DP_Rewrite_Republish::get_pending_delete_ids() );
+
+		Oli_DP_Rewrite_Republish::delete_rewrite_copy( $rewrite_id );
+		$this->assertNull( get_post( $rewrite_id ) );
+
+		$after_delete = Oli_DP_Rewrite_Republish::get_pending_delete_ids();
+		$this->assertNotContains( $rewrite_id, $after_delete );
+		$this->assertSame( $after_delete, get_transient( Oli_DP_Rewrite_Republish::PENDING_DELETE_IDS_TRANSIENT ) );
+
+		$_SERVER['REQUEST_URI'] = $previous_uri;
+	}
+
+	public function test_admin_list_query_does_not_exclude_merged_copies() {
+		$previous_uri           = isset( $_SERVER['REQUEST_URI'] ) ? $_SERVER['REQUEST_URI'] : '';
+		$_SERVER['REQUEST_URI'] = '/wp-json/wp/v2/posts/1';
+
+		$original_id = self::factory()->post->create(
+			array(
+				'post_title'   => 'Live Article',
+				'post_content' => 'Old body',
+				'post_status'  => 'publish',
+			)
+		);
+
+		$rewrite_id = Oli_DP_Duplicator::duplicate( $original_id, 'rewrite_republish' );
+		wp_update_post(
+			array(
+				'ID'           => $rewrite_id,
+				'post_content' => 'New body',
+			)
+		);
+		wp_publish_post( $rewrite_id );
+		$_SERVER['REQUEST_URI'] = $previous_uri;
+
+		set_current_screen( 'edit-post' );
+		$admin_query = new WP_Query(
+			array(
+				'post_type'      => 'post',
+				'post_status'    => 'any',
+				'posts_per_page' => -1,
+				'fields'         => 'ids',
+			)
+		);
+		$this->assertContains( $rewrite_id, $admin_query->posts );
+
+		set_current_screen( 'front' );
+		$front_query = new WP_Query(
+			array(
+				'post_type'      => 'post',
+				'post_status'    => 'any',
+				'posts_per_page' => -1,
+				'fields'         => 'ids',
+			)
+		);
+		$this->assertNotContains( $rewrite_id, $front_query->posts );
+
+		$_SERVER['REQUEST_URI'] = $previous_uri;
 	}
 
 	public function test_row_actions_use_clarified_labels() {

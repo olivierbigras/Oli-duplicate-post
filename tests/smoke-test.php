@@ -500,6 +500,30 @@ if ( false !== strpos( $plugin_php, 'hide_merged_copy' ) && false !== strpos( $p
 }
 
 ++$total_tests;
+if ( false !== strpos( $plugin_php, 'rest_pre_insert_' ) && false !== strpos( $plugin_php, 'prevent_pending_delete_publish' ) && false !== strpos( $plugin_php, 'is_pending_delete_copy' ) ) {
+	oli_dp_test_pass( 'Merged copies cannot be republished via REST or status transition' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Pending-delete republish guard missing' );
+}
+
+++$total_tests;
+if ( false !== strpos( $plugin_php, 'oli_dp_pending_delete_ids' ) && false !== strpos( $plugin_php, 'invalidate_pending_delete_ids_cache' ) ) {
+	oli_dp_test_pass( 'Pending-delete IDs are cached in a transient' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Pending-delete ID transient cache missing' );
+}
+
+++$total_tests;
+if ( false !== strpos( $plugin_php, 'query_should_exclude_merged_copies' ) && false !== strpos( $plugin_php, 'is_sitemap_query' ) ) {
+	oli_dp_test_pass( 'pre_get_posts exclusion is limited to front-end, REST, and sitemaps' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'pre_get_posts exclusion scope missing' );
+}
+
+++$total_tests;
 if ( false !== strpos( $plugin_php, 'Rewrite of:' ) && false !== strpos( $plugin_php, 'display_post_states' ) ) {
 	oli_dp_test_pass( 'Rewrite copies have a posts-list state' );
 	++$passed_tests;
