@@ -122,8 +122,8 @@ class Oli_DP_Post_List {
 			'<a href="%s" aria-label="%s">%s</a>',
 			esc_url( $clone_url ),
 			/* translators: %s: post title */
-			esc_attr( sprintf( __( 'Clone &#8220;%s&#8221;', 'oli-duplicate-post' ), $post->post_title ) ),
-			esc_html__( 'Clone', 'oli-duplicate-post' )
+			esc_attr( sprintf( __( 'Duplicate now &#8220;%s&#8221;', 'oli-duplicate-post' ), $post->post_title ) ),
+			esc_html__( 'Duplicate now', 'oli-duplicate-post' )
 		);
 
 		$new_draft_url                         = Oli_DP_Hooks::get_duplicate_url( $post->ID, 'new_draft' );
@@ -131,8 +131,8 @@ class Oli_DP_Post_List {
 			'<a href="%s" aria-label="%s">%s</a>',
 			esc_url( $new_draft_url ),
 			/* translators: %s: post title */
-			esc_attr( sprintf( __( 'New Draft of &#8220;%s&#8221;', 'oli-duplicate-post' ), $post->post_title ) ),
-			esc_html__( 'New Draft', 'oli-duplicate-post' )
+			esc_attr( sprintf( __( 'Duplicate and edit &#8220;%s&#8221;', 'oli-duplicate-post' ), $post->post_title ) ),
+			esc_html__( 'Duplicate and edit', 'oli-duplicate-post' )
 		);
 
 		if ( 'publish' === $post->post_status ) {
@@ -145,8 +145,8 @@ class Oli_DP_Post_List {
 						'<a href="%s" aria-label="%s">%s</a>',
 						esc_url( $rewrite_url ),
 						/* translators: %s: post title */
-						esc_attr( sprintf( __( 'Rewrite & Republish &#8220;%s&#8221;', 'oli-duplicate-post' ), $post->post_title ) ),
-						esc_html__( 'Rewrite & Republish', 'oli-duplicate-post' )
+						esc_attr( sprintf( __( 'Rewrite and republish &#8220;%s&#8221;', 'oli-duplicate-post' ), $post->post_title ) ),
+						esc_html__( 'Rewrite and republish', 'oli-duplicate-post' )
 					);
 				}
 			} else {

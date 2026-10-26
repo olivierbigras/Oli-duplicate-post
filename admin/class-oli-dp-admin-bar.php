@@ -60,6 +60,9 @@ class Oli_DP_Admin_Bar {
 				'id'     => 'oli_dp_clone',
 				'title'  => __( 'Clone', 'oli-duplicate-post' ),
 				'href'   => Oli_DP_Hooks::get_duplicate_url( $post->ID, 'clone' ),
+				'meta'   => array(
+					'title' => __( 'Creates a copy immediately, without opening it', 'oli-duplicate-post' ),
+				),
 			)
 		);
 
@@ -69,6 +72,9 @@ class Oli_DP_Admin_Bar {
 				'id'     => 'oli_dp_new_draft',
 				'title'  => __( 'New Draft', 'oli-duplicate-post' ),
 				'href'   => Oli_DP_Hooks::get_duplicate_url( $post->ID, 'new_draft' ),
+				'meta'   => array(
+					'title' => __( 'Creates a draft copy and opens it', 'oli-duplicate-post' ),
+				),
 			)
 		);
 
@@ -82,6 +88,9 @@ class Oli_DP_Admin_Bar {
 						'id'     => 'oli_dp_rewrite',
 						'title'  => __( 'Edit Rewrite Copy', 'oli-duplicate-post' ),
 						'href'   => get_edit_post_link( $existing_rewrite ),
+						'meta'   => array(
+							'title' => __( 'Opens the rewrite copy that will replace this post', 'oli-duplicate-post' ),
+						),
 					)
 				);
 			} elseif ( Oli_DP_Permissions::can_rewrite( $post->ID ) ) {
@@ -91,6 +100,9 @@ class Oli_DP_Admin_Bar {
 						'id'     => 'oli_dp_rewrite',
 						'title'  => __( 'Rewrite & Republish', 'oli-duplicate-post' ),
 						'href'   => Oli_DP_Hooks::get_duplicate_url( $post->ID, 'rewrite_republish' ),
+						'meta'   => array(
+							'title' => __( 'Prepares an edited version that will replace this one', 'oli-duplicate-post' ),
+						),
 					)
 				);
 			}

@@ -187,7 +187,10 @@ class Oli_DP_Settings {
 
 		add_settings_field(
 			'title_prefix',
-			__( 'Title Prefix', 'oli-duplicate-post' ),
+			sprintf(
+				'<label for="oli_dp_title_prefix">%s</label>',
+				esc_html__( 'Title Prefix', 'oli-duplicate-post' )
+			),
 			array( __CLASS__, 'render_text_field' ),
 			'oli-duplicate-post-settings',
 			'oli_dp_title_settings',
@@ -199,7 +202,10 @@ class Oli_DP_Settings {
 
 		add_settings_field(
 			'title_suffix',
-			__( 'Title Suffix', 'oli-duplicate-post' ),
+			sprintf(
+				'<label for="oli_dp_title_suffix">%s</label>',
+				esc_html__( 'Title Suffix', 'oli-duplicate-post' )
+			),
 			array( __CLASS__, 'render_text_field' ),
 			'oli-duplicate-post-settings',
 			'oli_dp_title_settings',
@@ -211,7 +217,10 @@ class Oli_DP_Settings {
 
 		add_settings_field(
 			'excluded_meta',
-			__( 'Excluded Meta Fields', 'oli-duplicate-post' ),
+			sprintf(
+				'<label for="oli_dp_excluded_meta">%s</label>',
+				esc_html__( 'Excluded Meta Fields', 'oli-duplicate-post' )
+			),
 			array( __CLASS__, 'render_textarea_field' ),
 			'oli-duplicate-post-settings',
 			'oli_dp_advanced',
@@ -223,7 +232,10 @@ class Oli_DP_Settings {
 
 		add_settings_field(
 			'excluded_taxonomies',
-			__( 'Excluded Taxonomies', 'oli-duplicate-post' ),
+			sprintf(
+				'<label for="oli_dp_excluded_taxonomies">%s</label>',
+				esc_html__( 'Excluded Taxonomies', 'oli-duplicate-post' )
+			),
 			array( __CLASS__, 'render_textarea_field' ),
 			'oli-duplicate-post-settings',
 			'oli_dp_advanced',
@@ -343,7 +355,7 @@ class Oli_DP_Settings {
 		$field    = $args['field'];
 		$value    = isset( $settings[ $field ] ) ? $settings[ $field ] : '';
 		?>
-		<input type="text" name="oli_dp_settings[<?php echo esc_attr( $field ); ?>]" value="<?php echo esc_attr( $value ); ?>" class="regular-text" />
+		<input type="text" id="oli_dp_<?php echo esc_attr( $field ); ?>" name="oli_dp_settings[<?php echo esc_attr( $field ); ?>]" value="<?php echo esc_attr( $value ); ?>" class="regular-text" />
 		<?php
 		if ( isset( $args['description'] ) ) {
 			echo '<p class="description">' . esc_html( $args['description'] ) . '</p>';
@@ -362,7 +374,7 @@ class Oli_DP_Settings {
 		$field    = $args['field'];
 		$value    = isset( $settings[ $field ] ) ? $settings[ $field ] : '';
 		?>
-		<textarea name="oli_dp_settings[<?php echo esc_attr( $field ); ?>]" rows="3" class="large-text"><?php echo esc_textarea( $value ); ?></textarea>
+		<textarea id="oli_dp_<?php echo esc_attr( $field ); ?>" name="oli_dp_settings[<?php echo esc_attr( $field ); ?>]" rows="3" class="large-text"><?php echo esc_textarea( $value ); ?></textarea>
 		<?php
 		if ( isset( $args['description'] ) ) {
 			echo '<p class="description">' . esc_html( $args['description'] ) . '</p>';

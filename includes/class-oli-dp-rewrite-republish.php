@@ -54,6 +54,14 @@ class Oli_DP_Rewrite_Republish {
 	private static $pending_deletes = array();
 
 	/**
+	 * Cached IDs of merged copies waiting to be deleted.
+	 *
+	 * @since 1.0.4
+	 * @var int[]|null
+	 */
+	private static $pending_delete_ids = null;
+
+	/**
 	 * Initialize the class.
 	 *
 	 * @since 1.0.0
@@ -63,10 +71,14 @@ class Oli_DP_Rewrite_Republish {
 		add_action( 'wp_after_insert_post', array( __CLASS__, 'merge_after_save' ), 20, 3 );
 		add_filter( 'rest_post_dispatch', array( __CLASS__, 'after_rest_response' ), 99 );
 		add_action( 'admin_init', array( __CLASS__, 'queue_delete_after_metabox' ) );
+		add_action( 'admin_init', array( __CLASS__, 'cleanup_stale_merged_copies' ), 20 );
 		add_action( 'oli_dp_delete_rewrite_copy', array( __CLASS__, 'delete_rewrite_copy' ) );
 		add_action( 'shutdown', array( __CLASS__, 'delete_merged_copies' ), 20 );
 		add_action( 'admin_notices', array( __CLASS__, 'show_rewrite_notice' ) );
+		add_action( 'pre_get_posts', array( __CLASS__, 'exclude_merged_copies' ) );
+		add_filter( 'wp_sitemaps_posts_query_args', array( __CLASS__, 'exclude_merged_copies_from_sitemaps' ), 10, 2 );
 		add_filter( 'display_post_states', array( __CLASS__, 'add_post_state' ), 10, 2 );
+		add_filter( 'gettext', array( __CLASS__, 'relabel_publish' ), 10, 3 );
 		add_action( 'add_meta_boxes', array( __CLASS__, 'add_schedule_meta_box' ) );
 		add_action( 'post_submitbox_misc_actions', array( __CLASS__, 'add_publish_box_info' ) );
 		add_filter( 'redirect_post_location', array( __CLASS__, 'redirect_after_merge' ) );
@@ -206,6 +218,198 @@ class Oli_DP_Rewrite_Republish {
 	}
 
 	/**
+	 * Hide a merged rewrite copy from the public site without firing rewrite hooks.
+	 *
+	 * Gutenberg's meta-box-loader still loads the row with get_post().
+	 *
+	 * @since 1.0.4
+	 *
+	 * @param int $rewrite_id Rewrite copy ID.
+	 */
+	public static function hide_merged_copy( $rewrite_id ) {
+		global $wpdb;
+
+		$rewrite_id = absint( $rewrite_id );
+		if ( ! $rewrite_id ) {
+			return;
+		}
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$wpdb->update(
+			$wpdb->posts,
+			array(
+				'post_status' => 'draft',
+			),
+			array(
+				'ID' => $rewrite_id,
+			),
+			array( '%s' ),
+			array( '%d' )
+		);
+
+		clean_post_cache( $rewrite_id );
+		self::$pending_delete_ids = null;
+	}
+
+	/**
+	 * Exclude merged rewrite copies from listings.
+	 *
+	 * Direct get_post() lookups (Gutenberg, meta-box-loader) are unchanged.
+	 *
+	 * @since 1.0.4
+	 *
+	 * @param WP_Query $query Query.
+	 */
+	public static function exclude_merged_copies( $query ) {
+		if ( ! $query instanceof WP_Query ) {
+			return;
+		}
+
+		if ( $query->get( 'oli_dp_include_pending_delete' ) ) {
+			return;
+		}
+
+		$exclude = self::get_pending_delete_ids();
+		if ( empty( $exclude ) ) {
+			return;
+		}
+
+		$existing = $query->get( 'post__not_in' );
+		$existing = is_array( $existing ) ? $existing : array();
+
+		$query->set( 'post__not_in', array_values( array_unique( array_merge( $existing, $exclude ) ) ) );
+	}
+
+	/**
+	 * Exclude merged rewrite copies from sitemaps.
+	 *
+	 * @since 1.0.4
+	 *
+	 * @param array  $args      Query args.
+	 * @param string $post_type Post type.
+	 * @return array
+	 */
+	public static function exclude_merged_copies_from_sitemaps( $args, $post_type = '' ) {
+		unset( $post_type );
+
+		$exclude = self::get_pending_delete_ids();
+		if ( empty( $exclude ) ) {
+			return $args;
+		}
+
+		$not_in               = isset( $args['post__not_in'] ) ? (array) $args['post__not_in'] : array();
+		$args['post__not_in'] = array_values( array_unique( array_merge( $not_in, $exclude ) ) );
+
+		return $args;
+	}
+
+	/**
+	 * Delete merged copies older than five minutes from admin screens.
+	 *
+	 * Cron may be disabled (`DISABLE_WP_CRON`); visiting wp-admin still
+	 * removes leftover copies without waiting for wp-cron.
+	 *
+	 * @since 1.0.4
+	 */
+	public static function cleanup_stale_merged_copies() {
+		if ( ! is_admin() || wp_doing_ajax() || wp_doing_cron() || self::is_rest_request() ) {
+			return;
+		}
+
+		self::delete_stale_merged_copies();
+	}
+
+	/**
+	 * Permanently delete merged copies older than the given age.
+	 *
+	 * @since 1.0.4
+	 *
+	 * @param int $max_age Maximum age in seconds. Default 5 minutes.
+	 * @return int[] Deleted post IDs.
+	 */
+	public static function delete_stale_merged_copies( $max_age = 300 ) {
+		$ids = self::get_stale_merged_copy_ids( $max_age );
+		if ( empty( $ids ) ) {
+			return array();
+		}
+
+		$deleted = array();
+
+		foreach ( $ids as $rewrite_id ) {
+			self::unschedule_copy_deletion( $rewrite_id );
+			if ( get_post( $rewrite_id ) ) {
+				wp_delete_post( $rewrite_id, true );
+				$deleted[] = $rewrite_id;
+			}
+		}
+
+		self::$pending_delete_ids = null;
+
+		return $deleted;
+	}
+
+	/**
+	 * IDs of merged copies marked for deletion.
+	 *
+	 * @since 1.0.4
+	 *
+	 * @return int[]
+	 */
+	public static function get_pending_delete_ids() {
+		if ( null !== self::$pending_delete_ids ) {
+			return self::$pending_delete_ids;
+		}
+
+		global $wpdb;
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$ids = $wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = %s LIMIT 100",
+				'_oli_dp_pending_delete'
+			)
+		);
+
+		self::$pending_delete_ids = array_values(
+			array_filter(
+				array_map( 'intval', (array) $ids )
+			)
+		);
+
+		return self::$pending_delete_ids;
+	}
+
+	/**
+	 * IDs of merged copies older than the given age.
+	 *
+	 * @since 1.0.4
+	 *
+	 * @param int $max_age Maximum age in seconds.
+	 * @return int[]
+	 */
+	public static function get_stale_merged_copy_ids( $max_age = 300 ) {
+		global $wpdb;
+
+		$max_age = absint( $max_age );
+		$cutoff  = time() - $max_age;
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$ids = $wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = %s AND CAST(meta_value AS UNSIGNED) <= %d LIMIT 20",
+				'_oli_dp_pending_delete',
+				$cutoff
+			)
+		);
+
+		return array_values(
+			array_filter(
+				array_map( 'intval', (array) $ids )
+			)
+		);
+	}
+
+	/**
 	 * Cron callback: delete a rewrite copy marked for delayed removal.
 	 *
 	 * @since 1.0.3
@@ -224,6 +428,7 @@ class Oli_DP_Rewrite_Republish {
 
 		self::unschedule_copy_deletion( $rewrite_id );
 		wp_delete_post( $rewrite_id, true );
+		self::$pending_delete_ids = null;
 	}
 
 	/**
@@ -286,6 +491,8 @@ class Oli_DP_Rewrite_Republish {
 			self::unschedule_copy_deletion( $rewrite_id );
 			wp_delete_post( $rewrite_id, true );
 		}
+
+		self::$pending_delete_ids = null;
 	}
 
 	/**
@@ -526,7 +733,9 @@ class Oli_DP_Rewrite_Republish {
 		delete_post_meta( $original_post_id, '_oli_dp_rewrite_copy' );
 		delete_post_meta( $rewrite_post_id, '_oli_dp_original_post' );
 		delete_post_meta( $rewrite_post_id, '_oli_dp_scheduled_gmt' );
-		update_post_meta( $rewrite_post_id, '_oli_dp_pending_delete', '1' );
+		update_post_meta( $rewrite_post_id, '_oli_dp_pending_delete', (string) time() );
+
+		self::hide_merged_copy( (int) $rewrite_post_id );
 
 		if ( self::should_defer_copy_deletion() ) {
 			self::schedule_copy_deletion( (int) $rewrite_post_id );
@@ -660,19 +869,74 @@ class Oli_DP_Rewrite_Republish {
 	 * @return array Modified post states.
 	 */
 	public static function add_post_state( $post_states, $post ) {
-		$original_post_id = get_post_meta( $post->ID, '_oli_dp_original_post', true );
+		$original_post_id = absint( get_post_meta( $post->ID, '_oli_dp_original_post', true ) );
 
 		if ( $original_post_id ) {
-			$post_states['oli_dp_rewrite'] = __( 'Rewrite & Republish', 'oli-duplicate-post' );
+			$original = get_post( $original_post_id );
+			$title    = $original ? $original->post_title : '';
+			$link     = $original ? get_edit_post_link( $original_post_id ) : '';
+
+			if ( $link ) {
+				$post_states['oli_dp_rewrite'] = sprintf(
+					/* translators: %s: original post title as a link */
+					__( 'Rewrite of: %s', 'oli-duplicate-post' ),
+					sprintf(
+						'<a href="%s">%s</a>',
+						esc_url( $link ),
+						esc_html( $title )
+					)
+				);
+			} else {
+				$post_states['oli_dp_rewrite'] = sprintf(
+					/* translators: %s: original post title */
+					__( 'Rewrite of: %s', 'oli-duplicate-post' ),
+					esc_html( $title )
+				);
+			}
 		}
 
-		$rewrite_copy_id = get_post_meta( $post->ID, '_oli_dp_rewrite_copy', true );
+		$rewrite_copy_id = absint( get_post_meta( $post->ID, '_oli_dp_rewrite_copy', true ) );
 
 		if ( $rewrite_copy_id ) {
-			$post_states['oli_dp_original'] = __( 'Original (being rewritten)', 'oli-duplicate-post' );
+			$post_states['oli_dp_original'] = sprintf(
+				/* translators: %d: rewrite copy post ID */
+				__( 'Rewrite in progress (draft #%d)', 'oli-duplicate-post' ),
+				$rewrite_copy_id
+			);
 		}
 
 		return $post_states;
+	}
+
+	/**
+	 * Relabel the classic-editor Publish button on rewrite copies.
+	 *
+	 * @since 1.0.4
+	 *
+	 * @param string $translation Translated text.
+	 * @param string $text        Original text.
+	 * @param string $domain      Text domain.
+	 * @return string
+	 */
+	public static function relabel_publish( $translation, $text, $domain ) {
+		if ( 'default' !== $domain ) {
+			return $translation;
+		}
+
+		if ( 'Publish' !== $text && 'Publish…' !== $text && 'Publish...' !== $text ) {
+			return $translation;
+		}
+
+		if ( ! is_admin() ) {
+			return $translation;
+		}
+
+		$post_id = self::get_requested_post_id();
+		if ( ! $post_id || ! get_post_meta( $post_id, '_oli_dp_original_post', true ) ) {
+			return $translation;
+		}
+
+		return __( 'Republish', 'oli-duplicate-post' );
 	}
 
 	/**

@@ -388,6 +388,22 @@ if ( false !== strpos( $plugin_js, 'PluginMoreMenuItem' ) ) {
 }
 
 ++$total_tests;
+if ( false !== strpos( $plugin_js, 'createWarningNotice' ) && false !== strpos( $plugin_js, 'isDismissible: false' ) ) {
+	oli_dp_test_pass( 'Block editor rewrite notice is non-dismissible' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Block editor rewrite notice missing' );
+}
+
+++$total_tests;
+if ( false !== strpos( $plugin_js, 'PluginPrePublishPanel' ) ) {
+	oli_dp_test_pass( 'Block editor pre-publish overwrite warning present' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Block editor pre-publish panel missing' );
+}
+
+++$total_tests;
 if ( false !== strpos( $plugin_php, 'Copy to New Draft' ) || false !== strpos( $plugin_js, 'Copy to New Draft' ) ) {
 	oli_dp_test_pass( 'Quick edit / Copy to New Draft link present' );
 	++$passed_tests;
@@ -473,6 +489,38 @@ if ( false !== strpos( $plugin_php, 'oli_dp_delete_rewrite_copy' ) && false !== 
 	++$passed_tests;
 } else {
 	oli_dp_test_fail( 'Gutenberg meta-box-loader delete path missing' );
+}
+
+++$total_tests;
+if ( false !== strpos( $plugin_php, 'hide_merged_copy' ) && false !== strpos( $plugin_php, 'exclude_merged_copies' ) && false !== strpos( $plugin_php, 'cleanup_stale_merged_copies' ) ) {
+	oli_dp_test_pass( 'Merged copies are hidden, excluded, and cleaned up after 5 minutes' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Merged-copy hide/exclude/cleanup path missing' );
+}
+
+++$total_tests;
+if ( false !== strpos( $plugin_php, 'Rewrite of:' ) && false !== strpos( $plugin_php, 'display_post_states' ) ) {
+	oli_dp_test_pass( 'Rewrite copies have a posts-list state' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Rewrite copy post state missing' );
+}
+
+++$total_tests;
+if ( false !== strpos( $plugin_php, 'for="oli_dp_title_prefix"' ) && false !== strpos( $plugin_php, 'id="oli_dp_' ) ) {
+	oli_dp_test_pass( 'Settings text fields have label for attributes' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Settings label for attributes missing' );
+}
+
+++$total_tests;
+if ( false !== strpos( $plugin_php, 'Duplicate now' ) && false !== strpos( $plugin_php, 'Creates a copy immediately, without opening it' ) ) {
+	oli_dp_test_pass( 'Row actions and admin-bar tooltips use clarified labels' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Clarified row-action or admin-bar labels missing' );
 }
 
 ++$total_tests;

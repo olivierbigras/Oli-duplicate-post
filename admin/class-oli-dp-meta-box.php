@@ -162,12 +162,27 @@ class Oli_DP_Meta_Box {
 		$new_draft_url   = Oli_DP_Hooks::get_duplicate_url( $post->ID, 'new_draft' );
 		$rewrite_url     = '';
 		$original_edit   = '';
-		$is_rewrite_copy = (bool) get_post_meta( $post->ID, '_oli_dp_original_post', true );
+		$original_title  = '';
+		$compare_url     = '';
+		$original_id     = absint( get_post_meta( $post->ID, '_oli_dp_original_post', true ) );
+		$is_rewrite_copy = (bool) $original_id;
 
 		if ( $is_rewrite_copy ) {
-			$original_id = absint( get_post_meta( $post->ID, '_oli_dp_original_post', true ) );
-			if ( $original_id ) {
-				$original_edit = get_edit_post_link( $original_id, 'raw' );
+			$original = get_post( $original_id );
+			if ( $original ) {
+				$original_title = $original->post_title;
+				$original_edit  = get_edit_post_link( $original_id, 'raw' );
+				$compare_url    = wp_nonce_url(
+					add_query_arg(
+						array(
+							'page'     => 'oli-dp-compare',
+							'original' => $original_id,
+							'rewrite'  => $post->ID,
+						),
+						admin_url( 'admin.php' )
+					),
+					'oli_dp_compare_' . $original_id . '_' . $post->ID
+				);
 			}
 		} elseif ( 'publish' === $post->post_status && Oli_DP_Permissions::can_rewrite( $post->ID ) ) {
 			$rewrite_url = Oli_DP_Hooks::get_duplicate_url( $post->ID, 'rewrite_republish' );
@@ -183,7 +198,7 @@ class Oli_DP_Meta_Box {
 		wp_enqueue_script(
 			'oli-dp-block-editor',
 			OLI_DP_PLUGIN_URL . 'assets/js/block-editor.js',
-			array( 'wp-plugins', 'wp-edit-post', 'wp-element', 'wp-components', 'wp-data', 'wp-i18n' ),
+			array( 'wp-plugins', 'wp-edit-post', 'wp-element', 'wp-components', 'wp-data', 'wp-i18n', 'wp-notices', 'wp-hooks' ),
 			OLI_DP_VERSION,
 			true
 		);
@@ -197,12 +212,30 @@ class Oli_DP_Meta_Box {
 				'rewriteUrl'      => $rewrite_url,
 				'isRewrite'       => $is_rewrite_copy,
 				'originalEditUrl' => $original_edit ? $original_edit : '',
+				'compareUrl'      => $compare_url,
 				'i18n'            => array(
-					'duplicatePost'    => __( 'Duplicate Post', 'oli-duplicate-post' ),
-					'clone'            => __( 'Clone', 'oli-duplicate-post' ),
-					'newDraft'         => __( 'New Draft', 'oli-duplicate-post' ),
-					'copyToNewDraft'   => __( 'Copy to New Draft', 'oli-duplicate-post' ),
-					'rewriteRepublish' => __( 'Rewrite & Republish', 'oli-duplicate-post' ),
+					'duplicatePost'         => __( 'Duplicate Post', 'oli-duplicate-post' ),
+					'clone'                 => __( 'Clone', 'oli-duplicate-post' ),
+					'newDraft'              => __( 'New Draft', 'oli-duplicate-post' ),
+					'copyToNewDraft'        => __( 'Copy to New Draft', 'oli-duplicate-post' ),
+					'rewriteRepublish'      => __( 'Rewrite & Republish', 'oli-duplicate-post' ),
+					'rewriteNotice'         => sprintf(
+						/* translators: %s: original post title */
+						__( 'You are editing a rewrite of “%s”. Publishing will replace the original.', 'oli-duplicate-post' ),
+						$original_title
+					),
+					'viewOriginal'          => __( 'View original', 'oli-duplicate-post' ),
+					'compare'               => __( 'Compare', 'oli-duplicate-post' ),
+					'republish'             => __( 'Republish', 'oli-duplicate-post' ),
+					'republishWarningTitle' => __( 'Original will be overwritten', 'oli-duplicate-post' ),
+					'prePublishWarning'     => sprintf(
+						/* translators: %s: original post title */
+						__( 'When you click Republish, this copy will replace “%s” (same URL, same ID). The copy will then be deleted.', 'oli-duplicate-post' ),
+						$original_title
+					),
+					'republishSchedule'     => __( 'Republish Schedule', 'oli-duplicate-post' ),
+					'scheduleHelp'          => __( 'When you publish this post it replaces the original immediately. Scheduling keeps the original live until the scheduled time.', 'oli-duplicate-post' ),
+					'rewriteCopyLabel'      => __( '[Rewrite copy]', 'oli-duplicate-post' ),
 				),
 			)
 		);

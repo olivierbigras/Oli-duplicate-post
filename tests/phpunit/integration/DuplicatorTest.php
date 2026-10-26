@@ -309,7 +309,10 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 
 		$this->assertSame( 'New body', get_post( $original_id )->post_content );
 		$this->assertNotNull( get_post( $rewrite_id ) );
-		$this->assertSame( '1', get_post_meta( $rewrite_id, '_oli_dp_pending_delete', true ) );
+		$this->assertSame( 'draft', get_post_status( $rewrite_id ) );
+		$pending = get_post_meta( $rewrite_id, '_oli_dp_pending_delete', true );
+		$this->assertNotEmpty( $pending );
+		$this->assertTrue( is_numeric( $pending ) );
 		$this->assertNotFalse( wp_next_scheduled( 'oli_dp_delete_rewrite_copy', array( $rewrite_id ) ) );
 
 		Oli_DP_Rewrite_Republish::delete_rewrite_copy( $rewrite_id );
@@ -542,6 +545,87 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 
 		unset( $_GET['post'] );
 		set_current_screen( 'front' );
+	}
+
+	public function test_merged_copy_is_hidden_and_cleaned_after_five_minutes() {
+		$previous_uri           = isset( $_SERVER['REQUEST_URI'] ) ? $_SERVER['REQUEST_URI'] : '';
+		$_SERVER['REQUEST_URI'] = '/wp-json/wp/v2/posts/1';
+
+		$original_id = self::factory()->post->create(
+			array(
+				'post_title'   => 'Live Article',
+				'post_content' => 'Old body',
+				'post_status'  => 'publish',
+			)
+		);
+
+		$rewrite_id = Oli_DP_Duplicator::duplicate( $original_id, 'rewrite_republish' );
+		wp_update_post(
+			array(
+				'ID'           => $rewrite_id,
+				'post_content' => 'New body',
+			)
+		);
+		wp_publish_post( $rewrite_id );
+
+		$this->assertSame( 'New body', get_post( $original_id )->post_content );
+		$this->assertNotNull( get_post( $rewrite_id ) );
+		$this->assertSame( 'draft', get_post_status( $rewrite_id ) );
+		$this->assertContains( $rewrite_id, Oli_DP_Rewrite_Republish::get_pending_delete_ids() );
+
+		$query = new WP_Query(
+			array(
+				'post_type'      => 'post',
+				'post_status'    => 'any',
+				'posts_per_page' => -1,
+				'fields'         => 'ids',
+			)
+		);
+		$this->assertNotContains( $rewrite_id, $query->posts );
+
+		$sitemap_args = apply_filters( 'wp_sitemaps_posts_query_args', array( 'post_type' => 'post' ), 'post' );
+		$this->assertContains( $rewrite_id, $sitemap_args['post__not_in'] );
+
+		$this->assertSame( array(), Oli_DP_Rewrite_Republish::delete_stale_merged_copies() );
+		$this->assertNotNull( get_post( $rewrite_id ) );
+
+		update_post_meta( $rewrite_id, '_oli_dp_pending_delete', (string) ( time() - ( 6 * MINUTE_IN_SECONDS ) ) );
+		$deleted = Oli_DP_Rewrite_Republish::delete_stale_merged_copies();
+		$this->assertContains( $rewrite_id, $deleted );
+		$this->assertNull( get_post( $rewrite_id ) );
+
+		$_SERVER['REQUEST_URI'] = $previous_uri;
+	}
+
+	public function test_rewrite_copy_has_list_post_state() {
+		$original_id = self::factory()->post->create(
+			array(
+				'post_title'  => 'Demo Article A',
+				'post_status' => 'publish',
+			)
+		);
+
+		$rewrite_id = Oli_DP_Duplicator::duplicate( $original_id, 'rewrite_republish' );
+		$copy_states = Oli_DP_Rewrite_Republish::add_post_state( array(), get_post( $rewrite_id ) );
+		$original_states = Oli_DP_Rewrite_Republish::add_post_state( array(), get_post( $original_id ) );
+
+		$this->assertArrayHasKey( 'oli_dp_rewrite', $copy_states );
+		$this->assertStringContainsString( 'Rewrite of:', wp_strip_all_tags( $copy_states['oli_dp_rewrite'] ) );
+		$this->assertStringContainsString( 'Demo Article A', wp_strip_all_tags( $copy_states['oli_dp_rewrite'] ) );
+		$this->assertArrayHasKey( 'oli_dp_original', $original_states );
+		$this->assertSame(
+			sprintf( 'Rewrite in progress (draft #%d)', $rewrite_id ),
+			$original_states['oli_dp_original']
+		);
+	}
+
+	public function test_row_actions_use_clarified_labels() {
+		$post    = get_post( self::factory()->post->create( array( 'post_status' => 'publish' ) ) );
+		$actions = Oli_DP_Post_List::add_row_actions( array(), $post );
+
+		$this->assertStringContainsString( 'Duplicate now', $actions['oli_dp_clone'] );
+		$this->assertStringContainsString( 'Duplicate and edit', $actions['oli_dp_new_draft'] );
+		$this->assertStringContainsString( 'Rewrite and republish', $actions['oli_dp_rewrite'] );
 	}
 
 	public function test_bulk_actions_include_clone_and_rewrite() {
