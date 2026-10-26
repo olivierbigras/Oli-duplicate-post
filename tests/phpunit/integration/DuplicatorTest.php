@@ -648,39 +648,51 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 		$this->assertNotEmpty( get_post_meta( $rewrite_id, '_oli_dp_pending_delete', true ) );
 		$this->assertSame( '', get_post_meta( $rewrite_id, '_oli_dp_original_post', true ) );
 
-		$prepared          = new stdClass();
-		$prepared->ID      = $rewrite_id;
-		$prepared->post_status = 'publish';
-		$request           = new WP_REST_Request( 'POST', '/wp/v2/posts/' . $rewrite_id );
-		$request->set_param( 'id', $rewrite_id );
-		$request->set_param( 'status', 'publish' );
+		foreach ( array( 'private', 'pending', 'publish', 'future' ) as $status ) {
+			$prepared              = new stdClass();
+			$prepared->ID          = $rewrite_id;
+			$prepared->post_status = $status;
+			$request               = new WP_REST_Request( 'POST', '/wp/v2/posts/' . $rewrite_id );
+			$request->set_param( 'id', $rewrite_id );
+			$request->set_param( 'status', $status );
 
-		$guarded = Oli_DP_Rewrite_Republish::rest_prevent_pending_delete_publish( $prepared, $request );
-		$this->assertSame( 'draft', $guarded->post_status );
+			$guarded = Oli_DP_Rewrite_Republish::rest_prevent_pending_delete_publish( $prepared, $request );
+			$this->assertSame( 'draft', $guarded->post_status, $status );
 
-		$filtered = Oli_DP_Rewrite_Republish::prevent_pending_delete_publish(
+			$filtered = Oli_DP_Rewrite_Republish::prevent_pending_delete_publish(
+				array(
+					'post_status' => $status,
+				),
+				array(
+					'ID' => $rewrite_id,
+				)
+			);
+			$this->assertSame( 'draft', $filtered['post_status'], $status );
+
+			wp_update_post(
+				array(
+					'ID'          => $rewrite_id,
+					'post_status' => $status,
+				)
+			);
+			$this->assertSame( 'draft', get_post_status( $rewrite_id ), $status );
+
+			Oli_DP_Rewrite_Republish::handle_publish( $status, 'draft', get_post( $rewrite_id ) );
+			$this->assertSame( 'draft', get_post_status( $rewrite_id ), $status );
+		}
+
+		$allowed = Oli_DP_Rewrite_Republish::prevent_pending_delete_publish(
 			array(
-				'post_status' => 'publish',
+				'post_status' => 'trash',
 			),
 			array(
 				'ID' => $rewrite_id,
 			)
 		);
-		$this->assertSame( 'draft', $filtered['post_status'] );
+		$this->assertSame( 'trash', $allowed['post_status'] );
 
-		wp_update_post(
-			array(
-				'ID'          => $rewrite_id,
-				'post_status' => 'publish',
-			)
-		);
-
-		$this->assertSame( 'draft', get_post_status( $rewrite_id ) );
 		$this->assertSame( 'Updated Article', get_post( $original_id )->post_title );
 		$this->assertSame( 'New body', get_post( $original_id )->post_content );
-
-		Oli_DP_Rewrite_Republish::handle_publish( 'publish', 'draft', get_post( $rewrite_id ) );
-		$this->assertSame( 'draft', get_post_status( $rewrite_id ) );
 
 		$_SERVER['REQUEST_URI'] = $previous_uri;
 	}
@@ -774,6 +786,96 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 		$this->assertNotContains( $rewrite_id, $front_query->posts );
 
 		$_SERVER['REQUEST_URI'] = $previous_uri;
+	}
+
+	public function test_admin_cleanup_skips_postmeta_when_pending_cache_is_empty() {
+		Oli_DP_Rewrite_Republish::get_pending_delete_ids();
+		$this->assertSame( array(), get_transient( Oli_DP_Rewrite_Republish::PENDING_DELETE_IDS_TRANSIENT ) );
+
+		$pending_meta_selects = 0;
+		$query_filter         = static function ( $sql ) use ( &$pending_meta_selects ) {
+			if ( false !== stripos( $sql, 'SELECT' ) && false !== strpos( $sql, '_oli_dp_pending_delete' ) ) {
+				++$pending_meta_selects;
+			}
+			return $sql;
+		};
+		add_filter( 'query', $query_filter );
+
+		set_current_screen( 'dashboard' );
+		Oli_DP_Rewrite_Republish::cleanup_stale_merged_copies();
+		remove_filter( 'query', $query_filter );
+
+		$this->assertSame( 0, $pending_meta_selects );
+		$this->assertSame( array(), Oli_DP_Rewrite_Republish::get_stale_merged_copy_ids() );
+		set_current_screen( 'front' );
+	}
+
+	public function test_admin_cleanup_still_deletes_stale_merged_copies() {
+		$previous_uri           = isset( $_SERVER['REQUEST_URI'] ) ? $_SERVER['REQUEST_URI'] : '';
+		$_SERVER['REQUEST_URI'] = '/wp-json/wp/v2/posts/1';
+
+		$original_id = self::factory()->post->create(
+			array(
+				'post_title'   => 'Live Article',
+				'post_content' => 'Old body',
+				'post_status'  => 'publish',
+			)
+		);
+
+		$rewrite_id = Oli_DP_Duplicator::duplicate( $original_id, 'rewrite_republish' );
+		wp_update_post(
+			array(
+				'ID'           => $rewrite_id,
+				'post_content' => 'New body',
+			)
+		);
+		wp_publish_post( $rewrite_id );
+		$_SERVER['REQUEST_URI'] = $previous_uri;
+
+		update_post_meta( $rewrite_id, '_oli_dp_pending_delete', (string) ( time() - ( 6 * MINUTE_IN_SECONDS ) ) );
+
+		set_current_screen( 'dashboard' );
+		Oli_DP_Rewrite_Republish::cleanup_stale_merged_copies();
+		set_current_screen( 'front' );
+
+		$this->assertNull( get_post( $rewrite_id ) );
+	}
+
+	public function test_metabox_loader_redirects_to_original_after_merge() {
+		$previous_uri           = isset( $_SERVER['REQUEST_URI'] ) ? $_SERVER['REQUEST_URI'] : '';
+		$_SERVER['REQUEST_URI'] = '/wp-json/wp/v2/posts/1';
+
+		$original_id = self::factory()->post->create(
+			array(
+				'post_title'   => 'Live Article',
+				'post_content' => 'Old body',
+				'post_status'  => 'publish',
+			)
+		);
+
+		$rewrite_id = Oli_DP_Duplicator::duplicate( $original_id, 'rewrite_republish' );
+		wp_update_post(
+			array(
+				'ID'           => $rewrite_id,
+				'post_content' => 'New body',
+			)
+		);
+		wp_publish_post( $rewrite_id );
+		$_SERVER['REQUEST_URI'] = $previous_uri;
+
+		$_REQUEST['meta-box-loader'] = '1';
+		$_REQUEST['post']            = (string) $rewrite_id;
+
+		$from = admin_url( 'post.php?post=' . $rewrite_id . '&action=edit&message=4' );
+		$to   = Oli_DP_Rewrite_Republish::redirect_after_merge( $from );
+
+		$to_query = array();
+		wp_parse_str( (string) wp_parse_url( $to, PHP_URL_QUERY ), $to_query );
+
+		$this->assertSame( (string) $original_id, (string) $to_query['post'] );
+		$this->assertSame( '1', (string) $to_query['oli_dp_republished'] );
+
+		unset( $_REQUEST['meta-box-loader'], $_REQUEST['post'] );
 	}
 
 	public function test_row_actions_use_clarified_labels() {

@@ -4,7 +4,7 @@ Tags: duplicate, clone, copy, post, page
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.0.5
+Stable tag: 1.0.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -140,6 +140,11 @@ This plugin does not call any external service. Clone, New Draft, and Rewrite & 
 
 == Changelog ==
 
+= 1.0.6 =
+* Merged rewrite copies stay draft for any non-draft status (private, pending, publish, future), including REST
+* Admin cleanup skips the postmeta query when the pending-delete cache is empty
+* Gutenberg meta-box-loader redirects to the original after Rewrite & Republish instead of the deleted copy
+
 = 1.0.5 =
 * Merged rewrite copies cannot be published again (REST, editor, or status transition) while `_oli_dp_pending_delete` is set
 * Pending-delete copy IDs are cached in a transient and refreshed when a copy is marked or deleted
@@ -196,6 +201,9 @@ This plugin does not call any external service. Clone, New Draft, and Rewrite & 
 * Initial release
 
 == Upgrade Notice ==
+
+= 1.0.6 =
+Keeps already-merged rewrite copies as draft, skips empty admin cleanup queries, and sends the block-editor meta-box save back to the original.
 
 = 1.0.5 =
 Stops republishing already-merged rewrite copies, caches pending-delete IDs, and limits query exclusion to the public site, REST, and sitemaps.

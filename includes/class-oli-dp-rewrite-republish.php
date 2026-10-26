@@ -116,7 +116,7 @@ class Oli_DP_Rewrite_Republish {
 		}
 
 		if ( self::is_pending_delete_copy( $post->ID ) ) {
-			if ( self::is_public_status( $new_status ) ) {
+			if ( self::should_keep_pending_delete_as_draft( $new_status ) ) {
 				self::hide_merged_copy( (int) $post->ID );
 			}
 			return;
@@ -163,7 +163,7 @@ class Oli_DP_Rewrite_Republish {
 	}
 
 	/**
-	 * Force a merged copy back to draft before wp_insert_post() writes publish.
+	 * Force a merged copy back to draft before wp_insert_post() writes a new status.
 	 *
 	 * Covers classic editor, cron, and REST updates that still call wp_insert_post().
 	 *
@@ -179,7 +179,7 @@ class Oli_DP_Rewrite_Republish {
 			return $data;
 		}
 
-		if ( ! self::is_public_status( $data['post_status'] ) || ! self::is_pending_delete_copy( $post_id ) ) {
+		if ( ! self::should_keep_pending_delete_as_draft( $data['post_status'] ) || ! self::is_pending_delete_copy( $post_id ) ) {
 			return $data;
 		}
 
@@ -202,7 +202,7 @@ class Oli_DP_Rewrite_Republish {
 	}
 
 	/**
-	 * Keep a merged rewrite copy as draft when REST tries to publish it.
+	 * Keep a merged rewrite copy as draft when REST tries to change its status.
 	 *
 	 * @since 1.0.5
 	 *
@@ -233,7 +233,7 @@ class Oli_DP_Rewrite_Republish {
 			$status = (string) $request->get_param( 'status' );
 		}
 
-		if ( self::is_public_status( $status ) ) {
+		if ( self::should_keep_pending_delete_as_draft( $status ) ) {
 			$prepared_post->post_status = 'draft';
 		}
 
@@ -418,6 +418,10 @@ class Oli_DP_Rewrite_Republish {
 			return;
 		}
 
+		if ( empty( self::get_pending_delete_ids() ) ) {
+			return;
+		}
+
 		self::delete_stale_merged_copies();
 	}
 
@@ -523,25 +527,23 @@ class Oli_DP_Rewrite_Republish {
 	 * @return int[]
 	 */
 	public static function get_stale_merged_copy_ids( $max_age = 300 ) {
-		global $wpdb;
+		$ids = self::get_pending_delete_ids();
+		if ( empty( $ids ) ) {
+			return array();
+		}
 
 		$max_age = absint( $max_age );
 		$cutoff  = time() - $max_age;
+		$stale   = array();
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-		$ids = $wpdb->get_col(
-			$wpdb->prepare(
-				"SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = %s AND CAST(meta_value AS UNSIGNED) <= %d LIMIT 20",
-				'_oli_dp_pending_delete',
-				$cutoff
-			)
-		);
+		foreach ( $ids as $post_id ) {
+			$marked = get_post_meta( $post_id, '_oli_dp_pending_delete', true );
+			if ( $marked && (int) $marked <= $cutoff ) {
+				$stale[] = (int) $post_id;
+			}
+		}
 
-		return array_values(
-			array_filter(
-				array_map( 'intval', (array) $ids )
-			)
-		);
+		return $stale;
 	}
 
 	/**
@@ -1181,11 +1183,17 @@ class Oli_DP_Rewrite_Republish {
 	 * @return string
 	 */
 	public static function redirect_after_merge( $location ) {
-		if ( ! self::$redirect_original_id ) {
+		$original_id = self::$redirect_original_id;
+
+		if ( ! $original_id && self::is_meta_box_loader_request() ) {
+			$original_id = self::get_pending_delete_original_id();
+		}
+
+		if ( ! $original_id ) {
 			return $location;
 		}
 
-		$edit_link = get_edit_post_link( self::$redirect_original_id, 'raw' );
+		$edit_link = get_edit_post_link( $original_id, 'raw' );
 		if ( ! $edit_link ) {
 			return $location;
 		}
@@ -1329,15 +1337,57 @@ class Oli_DP_Rewrite_Republish {
 	}
 
 	/**
-	 * Whether a status would make a merged copy publicly visible.
+	 * Original post ID for a merged copy, if it can still be resolved.
+	 *
+	 * The rewrite relationship meta is cleared on merge, so the republish
+	 * success transient is the fallback used by the Gutenberg meta-box-loader.
+	 *
+	 * @since 1.0.6
+	 *
+	 * @return int
+	 */
+	private static function get_pending_delete_original_id() {
+		$post_id = 0;
+		if ( isset( $_REQUEST['post'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$post_id = absint( wp_unslash( $_REQUEST['post'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		} elseif ( isset( $_REQUEST['post_ID'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$post_id = absint( wp_unslash( $_REQUEST['post_ID'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		}
+
+		if ( ! $post_id || ! self::is_pending_delete_copy( $post_id ) ) {
+			return 0;
+		}
+
+		$original_id = absint( get_post_meta( $post_id, '_oli_dp_original_post', true ) );
+		if ( $original_id ) {
+			return $original_id;
+		}
+
+		if ( ! is_user_logged_in() ) {
+			return 0;
+		}
+
+		return absint( get_transient( 'oli_dp_republish_success_' . get_current_user_id() ) );
+	}
+
+	/**
+	 * Whether a merged copy must stay draft instead of this status.
+	 *
+	 * Draft, autosave, and trash are left alone. Publish, future, private,
+	 * pending, and any other status are forced back to draft.
 	 *
 	 * @since 1.0.5
 	 *
 	 * @param string $status Post status.
 	 * @return bool
 	 */
-	private static function is_public_status( $status ) {
-		return in_array( $status, array( 'publish', 'future' ), true );
+	private static function should_keep_pending_delete_as_draft( $status ) {
+		$status = (string) $status;
+		if ( '' === $status ) {
+			return false;
+		}
+
+		return ! in_array( $status, array( 'draft', 'auto-draft', 'trash' ), true );
 	}
 
 	/**

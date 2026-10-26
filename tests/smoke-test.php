@@ -500,11 +500,11 @@ if ( false !== strpos( $plugin_php, 'hide_merged_copy' ) && false !== strpos( $p
 }
 
 ++$total_tests;
-if ( false !== strpos( $plugin_php, 'rest_pre_insert_' ) && false !== strpos( $plugin_php, 'prevent_pending_delete_publish' ) && false !== strpos( $plugin_php, 'is_pending_delete_copy' ) ) {
-	oli_dp_test_pass( 'Merged copies cannot be republished via REST or status transition' );
+if ( false !== strpos( $plugin_php, 'rest_pre_insert_' ) && false !== strpos( $plugin_php, 'prevent_pending_delete_publish' ) && false !== strpos( $plugin_php, 'should_keep_pending_delete_as_draft' ) ) {
+	oli_dp_test_pass( 'Merged copies stay draft for private, pending, publish, and future' );
 	++$passed_tests;
 } else {
-	oli_dp_test_fail( 'Pending-delete republish guard missing' );
+	oli_dp_test_fail( 'Pending-delete status guard missing' );
 }
 
 ++$total_tests;
@@ -521,6 +521,22 @@ if ( false !== strpos( $plugin_php, 'query_should_exclude_merged_copies' ) && fa
 	++$passed_tests;
 } else {
 	oli_dp_test_fail( 'pre_get_posts exclusion scope missing' );
+}
+
+++$total_tests;
+if ( false !== strpos( $plugin_php, 'empty( self::get_pending_delete_ids() )' ) && false !== strpos( $plugin_php, 'cleanup_stale_merged_copies' ) ) {
+	oli_dp_test_pass( 'Admin stale cleanup skips work when the pending-delete cache is empty' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Admin stale cleanup empty-cache short-circuit missing' );
+}
+
+++$total_tests;
+if ( false !== strpos( $plugin_php, 'get_pending_delete_original_id' ) && false !== strpos( $plugin_php, 'is_meta_box_loader_request' ) ) {
+	oli_dp_test_pass( 'Meta-box-loader redirects merged copies to the original' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Meta-box-loader original redirect missing' );
 }
 
 ++$total_tests;
