@@ -109,7 +109,8 @@ class Oli_DP_Rewrite_Republish {
 	 * Merge rewrite copy to original post.
 	 *
 	 * The original permalink and publish date are preserved so the live URL
-	 * does not change. The working copy is trashed after a successful merge.
+	 * does not change. The working copy is permanently deleted after a
+	 * successful merge.
 	 *
 	 * @since 1.0.0
 	 *
@@ -227,8 +228,9 @@ class Oli_DP_Rewrite_Republish {
 
 		delete_post_meta( $original_post_id, '_oli_dp_rewrite_copy' );
 		delete_post_meta( $rewrite_post_id, '_oli_dp_original_post' );
+		delete_post_meta( $rewrite_post_id, '_dp_original' );
 
-		wp_trash_post( $rewrite_post_id );
+		wp_delete_post( $rewrite_post_id, true );
 
 		/**
 		 * Fires after a rewrite copy is merged back to the original.

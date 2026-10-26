@@ -36,11 +36,6 @@ class Oli_DP_Settings {
 	 * @return array Default settings.
 	 */
 	public static function get_default_settings() {
-		$enabled_post_types = array( 'post', 'page' );
-		if ( post_type_exists( 'product' ) ) {
-			$enabled_post_types[] = 'product';
-		}
-
 		return array(
 			'copy_title'          => true,
 			'copy_date'           => false,
@@ -61,7 +56,7 @@ class Oli_DP_Settings {
 			'title_suffix'        => __( ' (Copy)', 'oli-duplicate-post' ),
 			'excluded_meta'       => '_edit_lock,_edit_last,_wp_old_slug,_wp_old_date',
 			'excluded_taxonomies' => '',
-			'enabled_post_types'  => $enabled_post_types,
+			'enabled_post_types'  => array( 'post', 'page' ),
 			'allowed_roles'       => array( 'administrator', 'editor' ),
 			'show_row_actions'    => true,
 			'show_admin_bar'      => true,
@@ -196,7 +191,10 @@ class Oli_DP_Settings {
 			array( __CLASS__, 'render_text_field' ),
 			'oli-duplicate-post-settings',
 			'oli_dp_title_settings',
-			array( 'field' => 'title_prefix' )
+			array(
+				'field'       => 'title_prefix',
+				'description' => __( 'Leading and trailing spaces are kept.', 'oli-duplicate-post' ),
+			)
 		);
 
 		add_settings_field(
@@ -205,7 +203,10 @@ class Oli_DP_Settings {
 			array( __CLASS__, 'render_text_field' ),
 			'oli-duplicate-post-settings',
 			'oli_dp_title_settings',
-			array( 'field' => 'title_suffix' )
+			array(
+				'field'       => 'title_suffix',
+				'description' => __( 'Leading and trailing spaces are kept.', 'oli-duplicate-post' ),
+			)
 		);
 
 		add_settings_field(
@@ -480,8 +481,8 @@ class Oli_DP_Settings {
 			$sanitized[ $field ] = ! empty( $input[ $field ] );
 		}
 
-		$sanitized['title_prefix']        = sanitize_text_field( $input['title_prefix'] ?? '' );
-		$sanitized['title_suffix']        = sanitize_text_field( $input['title_suffix'] ?? '' );
+		$sanitized['title_prefix']        = Oli_DP_Utils::sanitize_title_affix( $input['title_prefix'] ?? '' );
+		$sanitized['title_suffix']        = Oli_DP_Utils::sanitize_title_affix( $input['title_suffix'] ?? '' );
 		$sanitized['excluded_meta']       = sanitize_textarea_field( $input['excluded_meta'] ?? '' );
 		$sanitized['excluded_taxonomies'] = sanitize_textarea_field( $input['excluded_taxonomies'] ?? '' );
 

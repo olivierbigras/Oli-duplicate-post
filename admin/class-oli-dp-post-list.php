@@ -26,6 +26,73 @@ class Oli_DP_Post_List {
 	public static function init() {
 		add_filter( 'post_row_actions', array( __CLASS__, 'add_row_actions' ), 10, 2 );
 		add_filter( 'page_row_actions', array( __CLASS__, 'add_row_actions' ), 10, 2 );
+		add_action( 'admin_init', array( __CLASS__, 'register_original_columns' ) );
+	}
+
+	/**
+	 * Register the Original column on enabled list tables.
+	 *
+	 * @since 1.0.1
+	 */
+	public static function register_original_columns() {
+		$settings           = Oli_DP_Settings::get_settings();
+		$enabled_post_types = isset( $settings['enabled_post_types'] ) ? $settings['enabled_post_types'] : array();
+
+		foreach ( (array) $enabled_post_types as $post_type ) {
+			add_filter( 'manage_' . $post_type . '_posts_columns', array( __CLASS__, 'add_original_column' ) );
+			add_action( 'manage_' . $post_type . '_posts_custom_column', array( __CLASS__, 'render_original_column' ), 10, 2 );
+		}
+	}
+
+	/**
+	 * Add the Original column.
+	 *
+	 * @since 1.0.1
+	 *
+	 * @param array $columns Existing columns.
+	 * @return array
+	 */
+	public static function add_original_column( $columns ) {
+		$columns['oli_dp_original'] = __( 'Original', 'oli-duplicate-post' );
+		return $columns;
+	}
+
+	/**
+	 * Render a link to the source post stored in `_dp_original`.
+	 *
+	 * @since 1.0.1
+	 *
+	 * @param string $column  Column name.
+	 * @param int    $post_id Post ID.
+	 */
+	public static function render_original_column( $column, $post_id ) {
+		if ( 'oli_dp_original' !== $column ) {
+			return;
+		}
+
+		$original_id = Oli_DP_Utils::get_original_post_id( $post_id );
+		if ( ! $original_id ) {
+			echo '&mdash;';
+			return;
+		}
+
+		$original = get_post( $original_id );
+		if ( ! $original ) {
+			echo '&mdash;';
+			return;
+		}
+
+		$edit_link = get_edit_post_link( $original_id );
+		if ( $edit_link ) {
+			printf(
+				'<a href="%s">%s</a>',
+				esc_url( $edit_link ),
+				esc_html( get_the_title( $original ) )
+			);
+			return;
+		}
+
+		echo esc_html( get_the_title( $original ) );
 	}
 
 	/**

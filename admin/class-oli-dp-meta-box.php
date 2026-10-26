@@ -69,9 +69,42 @@ class Oli_DP_Meta_Box {
 
 		$clone_url     = Oli_DP_Hooks::get_duplicate_url( $post->ID, 'clone' );
 		$new_draft_url = Oli_DP_Hooks::get_duplicate_url( $post->ID, 'new_draft' );
+		$original_id   = Oli_DP_Utils::get_original_post_id( $post->ID );
+		$original      = $original_id ? get_post( $original_id ) : null;
 
 		?>
 		<div class="oli-dp-meta-box">
+			<?php if ( $original ) : ?>
+				<?php $original_edit = get_edit_post_link( $original_id ); ?>
+				<p class="description">
+					<?php
+					if ( $original_edit ) {
+						printf(
+							wp_kses(
+								/* translators: %s: original post title as a link */
+								__( 'Original: %s', 'oli-duplicate-post' ),
+								array(
+									'a' => array(
+										'href' => array(),
+									),
+								)
+							),
+							sprintf(
+								'<a href="%s">%s</a>',
+								esc_url( $original_edit ),
+								esc_html( $original->post_title )
+							)
+						);
+					} else {
+						printf(
+							/* translators: %s: original post title */
+							esc_html__( 'Original: %s', 'oli-duplicate-post' ),
+							esc_html( $original->post_title )
+						);
+					}
+					?>
+				</p>
+			<?php endif; ?>
 			<p>
 				<a href="<?php echo esc_url( $clone_url ); ?>" class="button button-secondary button-large oli-dp-button-full">
 					<?php esc_html_e( 'Clone', 'oli-duplicate-post' ); ?>

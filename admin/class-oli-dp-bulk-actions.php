@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Bulk Clone and New Draft on list tables.
+ * Bulk Clone, New Draft, and Rewrite & Republish on list tables.
  *
  * @since 1.0.0
  */
@@ -58,8 +58,9 @@ class Oli_DP_Bulk_Actions {
 			return $actions;
 		}
 
-		$actions['oli_dp_clone']     = __( 'Clone', 'oli-duplicate-post' );
-		$actions['oli_dp_new_draft'] = __( 'New Draft', 'oli-duplicate-post' );
+		$actions['oli_dp_clone']             = __( 'Clone', 'oli-duplicate-post' );
+		$actions['oli_dp_new_draft']         = __( 'New Draft', 'oli-duplicate-post' );
+		$actions['oli_dp_rewrite_republish'] = __( 'Rewrite & Republish', 'oli-duplicate-post' );
 
 		return $actions;
 	}
@@ -75,7 +76,13 @@ class Oli_DP_Bulk_Actions {
 	 * @return string Modified redirect URL.
 	 */
 	public static function handle_bulk_action( $redirect_to, $action, $post_ids ) {
-		if ( ! in_array( $action, array( 'oli_dp_clone', 'oli_dp_new_draft' ), true ) ) {
+		$modes = array(
+			'oli_dp_clone'             => 'clone',
+			'oli_dp_new_draft'         => 'new_draft',
+			'oli_dp_rewrite_republish' => 'rewrite_republish',
+		);
+
+		if ( ! isset( $modes[ $action ] ) ) {
 			return $redirect_to;
 		}
 
@@ -88,12 +95,20 @@ class Oli_DP_Bulk_Actions {
 			return $redirect_to;
 		}
 
-		$mode             = ( 'oli_dp_clone' === $action ) ? 'clone' : 'new_draft';
+		$mode             = $modes[ $action ];
 		$duplicated_count = 0;
 
 		foreach ( $post_ids as $post_id ) {
 			$post_id = absint( $post_id );
-			if ( ! $post_id || ! Oli_DP_Permissions::can_duplicate( $post_id ) ) {
+			if ( ! $post_id ) {
+				continue;
+			}
+
+			if ( 'rewrite_republish' === $mode ) {
+				if ( ! Oli_DP_Permissions::can_rewrite( $post_id ) ) {
+					continue;
+				}
+			} elseif ( ! Oli_DP_Permissions::can_duplicate( $post_id ) ) {
 				continue;
 			}
 

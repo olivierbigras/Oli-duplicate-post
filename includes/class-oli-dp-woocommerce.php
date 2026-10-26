@@ -120,6 +120,7 @@ class Oli_DP_WooCommerce {
 		foreach ( $variations as $variation ) {
 			$child_settings                    = $settings;
 			$child_settings['copy_children']   = false;
+			$child_settings['copy_status']     = false;
 			$child_settings['oli_dp_internal'] = true;
 
 			$new_variation_id = Oli_DP_Duplicator::duplicate( $variation->ID, 'clone', $child_settings );
@@ -131,8 +132,99 @@ class Oli_DP_WooCommerce {
 				array(
 					'ID'          => $new_variation_id,
 					'post_parent' => $new_id,
+					'post_status' => 'publish',
 				)
 			);
+		}
+
+		self::sync_variable_product( $new_id );
+	}
+
+	/**
+	 * Publish-ready variable products: sync prices and fill the lookup table.
+	 *
+	 * WooCommerce only sells variable products whose variations are published
+	 * and present in `wc_product_meta_lookup`.
+	 *
+	 * @since 1.0.1
+	 *
+	 * @param int $product_id New parent product ID.
+	 */
+	private static function sync_variable_product( $product_id ) {
+		$synced = false;
+
+		if ( class_exists( 'WC_Product_Variable' ) && is_callable( array( 'WC_Product_Variable', 'sync' ) ) ) {
+			WC_Product_Variable::sync( $product_id );
+			$synced = true;
+		}
+
+		$lookup_ids = array_merge(
+			array( (int) $product_id ),
+			self::get_variation_ids( $product_id )
+		);
+
+		foreach ( $lookup_ids as $lookup_id ) {
+			self::update_product_lookup_table( $lookup_id );
+
+			if ( function_exists( 'wc_delete_product_transients' ) ) {
+				wc_delete_product_transients( $lookup_id );
+			}
+		}
+
+		/**
+		 * Fires after variations are copied and the parent is synced.
+		 *
+		 * @since 1.0.1
+		 *
+		 * @param int   $product_id New parent product ID.
+		 * @param bool  $synced     Whether WC_Product_Variable::sync() ran.
+		 * @param int[] $lookup_ids Product and variation IDs refreshed in lookup tables.
+		 */
+		do_action( 'oli_dp_woocommerce_variable_synced', $product_id, $synced, $lookup_ids );
+	}
+
+	/**
+	 * Variation IDs attached to a product.
+	 *
+	 * @since 1.0.1
+	 *
+	 * @param int $product_id Parent product ID.
+	 * @return int[]
+	 */
+	private static function get_variation_ids( $product_id ) {
+		$variations = get_posts(
+			array(
+				'post_type'      => 'product_variation',
+				'post_parent'    => $product_id,
+				'post_status'    => 'any',
+				'posts_per_page' => -1,
+				'fields'         => 'ids',
+			)
+		);
+
+		return array_map( 'intval', $variations );
+	}
+
+	/**
+	 * Write one product or variation into wc_product_meta_lookup.
+	 *
+	 * @since 1.0.1
+	 *
+	 * @param int $product_id Product or variation ID.
+	 */
+	private static function update_product_lookup_table( $product_id ) {
+		if ( function_exists( 'wc_update_product_lookup_tables_for_product' ) ) {
+			wc_update_product_lookup_tables_for_product( $product_id );
+			return;
+		}
+
+		if ( ! class_exists( 'WC_Data_Store' ) ) {
+			return;
+		}
+
+		$data_store = WC_Data_Store::load( 'product' );
+		if ( $data_store && is_callable( array( $data_store, 'update_lookup_table' ) ) ) {
+			$data_store->update_lookup_table( $product_id, 'wc_product_meta_lookup' );
 		}
 	}
 }

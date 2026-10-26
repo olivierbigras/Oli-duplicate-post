@@ -104,6 +104,56 @@ class Oli_DP_Utils {
 	}
 
 	/**
+	 * Sanitize a title prefix or suffix without trimming spaces.
+	 *
+	 * `sanitize_text_field()` strips leading and trailing whitespace, which
+	 * would turn "Copy of " into "Copy of" and join it against the title.
+	 *
+	 * @since 1.0.1
+	 *
+	 * @param mixed $value Raw prefix or suffix.
+	 * @return string
+	 */
+	public static function sanitize_title_affix( $value ) {
+		if ( ! is_string( $value ) ) {
+			$value = (string) $value;
+		}
+
+		if ( function_exists( 'wp_unslash' ) ) {
+			$value = wp_unslash( $value );
+		}
+
+		if ( function_exists( 'wp_check_invalid_utf8' ) ) {
+			$value = wp_check_invalid_utf8( $value );
+		}
+
+		if ( function_exists( 'wp_strip_all_tags' ) ) {
+			$value = wp_strip_all_tags( $value );
+		} else {
+			$value = strip_tags( $value ); // phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags
+		}
+
+		return $value;
+	}
+
+	/**
+	 * Original post ID stored on a duplicate.
+	 *
+	 * @since 1.0.1
+	 *
+	 * @param int $post_id Duplicate post ID.
+	 * @return int
+	 */
+	public static function get_original_post_id( $post_id ) {
+		$original_id = absint( get_post_meta( $post_id, '_dp_original', true ) );
+		if ( $original_id ) {
+			return $original_id;
+		}
+
+		return absint( get_post_meta( $post_id, '_oli_dp_original_post', true ) );
+	}
+
+	/**
 	 * Internal meta keys that must never be copied.
 	 *
 	 * @since 1.0.0
@@ -117,6 +167,7 @@ class Oli_DP_Utils {
 			'_wp_old_slug',
 			'_wp_old_date',
 			'_thumbnail_id',
+			'_dp_original',
 			'_oli_dp_original_post',
 			'_oli_dp_rewrite_copy',
 		);

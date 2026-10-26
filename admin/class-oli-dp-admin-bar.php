@@ -100,20 +100,25 @@ class Oli_DP_Admin_Bar {
 	/**
 	 * Resolve the post shown in the admin bar.
 	 *
+	 * List tables (`edit.php`) have no current post. `get_post()` there
+	 * returns an arbitrary row, so Duplicate This is limited to the single
+	 * edit screen (`post.php`) and singular front-end views.
+	 *
 	 * @since 1.0.0
 	 *
 	 * @return WP_Post|null
 	 */
 	private static function get_current_post() {
 		if ( is_admin() ) {
-			if ( isset( $_GET['post'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-				$post = get_post( absint( wp_unslash( $_GET['post'] ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-				if ( $post ) {
-					return $post;
-				}
+			if ( ! self::is_single_edit_screen() ) {
+				return null;
 			}
 
-			$post = get_post();
+			if ( ! isset( $_GET['post'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+				return null;
+			}
+
+			$post = get_post( absint( wp_unslash( $_GET['post'] ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 			return $post instanceof WP_Post ? $post : null;
 		}
 
@@ -123,5 +128,18 @@ class Oli_DP_Admin_Bar {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Whether the request is a single post edit screen.
+	 *
+	 * @since 1.0.1
+	 *
+	 * @return bool
+	 */
+	private static function is_single_edit_screen() {
+		global $pagenow;
+
+		return isset( $pagenow ) && 'post.php' === $pagenow;
 	}
 }

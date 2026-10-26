@@ -419,6 +419,70 @@ if ( false !== strpos( $plugin_php, 'Oli_DP_WooCommerce' ) ) {
 	oli_dp_test_fail( 'WooCommerce handling missing' );
 }
 
+++$total_tests;
+if ( false !== strpos( $plugin_php, 'WC_Product_Variable::sync' ) && false !== strpos( $plugin_php, 'wc_product_meta_lookup' ) ) {
+	oli_dp_test_pass( 'Variable products sync and update lookup tables' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Variable product sync/lookup missing' );
+}
+
+++$total_tests;
+if ( false !== strpos( $plugin_php, "sanitize_title_affix" ) ) {
+	oli_dp_test_pass( 'Title prefix/suffix sanitization preserves spaces' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Title affix sanitizer missing' );
+}
+
+++$total_tests;
+if ( false !== strpos( $plugin_php, 'wp_insert_attachment' ) ) {
+	oli_dp_test_pass( 'Attachment copies use wp_insert_attachment()' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Attachment copies do not create real attachments' );
+}
+
+++$total_tests;
+if ( substr_count( $plugin_php, "'response' => 403" ) >= 1 ) {
+	oli_dp_test_pass( 'Invalid action URLs return HTTP 403' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'wp_die 403 response missing' );
+}
+
+++$total_tests;
+if ( false !== strpos( $plugin_php, "pagenow ) && 'post.php' === \$pagenow" ) || false !== strpos( $plugin_php, "'post.php' === \$pagenow" ) ) {
+	oli_dp_test_pass( 'Admin bar is limited to single edit screens' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Admin bar still resolves posts on list screens' );
+}
+
+++$total_tests;
+if ( false !== strpos( $plugin_php, 'wp_delete_post' ) && false === strpos( $plugin_php, 'wp_trash_post' ) ) {
+	oli_dp_test_pass( 'Rewrite copies are permanently deleted after merge' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Rewrite merge still uses trash instead of permanent delete' );
+}
+
+++$total_tests;
+if ( false !== strpos( $plugin_php, "'_dp_original'" ) ) {
+	oli_dp_test_pass( 'Copies store _dp_original meta' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( '_dp_original meta is missing' );
+}
+
+++$total_tests;
+if ( false !== strpos( $plugin_php, "'oli_dp_rewrite_republish'" ) ) {
+	oli_dp_test_pass( 'Bulk actions include Rewrite & Republish' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Bulk Rewrite & Republish action missing' );
+}
+
 oli_dp_test_section( 'CI/CD Tests' );
 ++$total_tests;
 $workflow_file = $plugin_root . '/.github/workflows/php-checks.yml';

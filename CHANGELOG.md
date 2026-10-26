@@ -5,6 +5,24 @@ All notable changes to Oli Duplicate Post will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-10-26
+
+### Added
+- `_dp_original` meta on every copy, with an Original list-table column and edit-screen link
+- Bulk Rewrite & Republish alongside Clone and New Draft
+- Tests for published product variations, title prefix/suffix spaces, and real attachment copies
+
+### Changed
+- Default enabled post types are `post` and `page` only (products stay opt-in)
+- Rewrite & Republish permanently deletes the working copy after merge
+- Title prefix and suffix keep leading and trailing spaces when settings are saved
+
+### Fixed
+- Duplicated product variations are published, the parent is synced, and `wc_product_meta_lookup` is updated
+- Attachment copies are real `attachment` posts that share the original file and metadata
+- Forged or invalid duplicate action URLs return HTTP 403
+- Admin bar "Duplicate This" no longer appears on list screens for a random post
+
 ## [1.0.0] - 2026-10-26
 
 ### Added
@@ -63,6 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release of Oli Duplicate Post
 
+[1.0.1]: https://github.com/olivierbigras/Oli-duplicate-post/releases/tag/1.0.1
 [1.0.0]: https://github.com/olivierbigras/Oli-duplicate-post/releases/tag/1.0.0
 [0.1.2]: https://github.com/olivierbigras/Oli-duplicate-post/releases/tag/0.1.2
 [0.1.1]: https://github.com/olivierbigras/Oli-duplicate-post/releases/tag/0.1.1

@@ -100,6 +100,8 @@ class Oli_DP_Duplicator {
 			self::copy_comments( $post_id, $new_post_id );
 		}
 
+		update_post_meta( $new_post_id, '_dp_original', $post_id );
+
 		if ( 'rewrite_republish' === $mode ) {
 			update_post_meta( $new_post_id, '_oli_dp_original_post', $post_id );
 			update_post_meta( $post_id, '_oli_dp_rewrite_copy', $new_post_id );
@@ -183,6 +185,10 @@ class Oli_DP_Duplicator {
 
 		if ( ! empty( $settings['copy_status'] ) && 'clone' === $mode ) {
 			$new_post_data['post_status'] = $post->post_status;
+		}
+
+		if ( 'product_variation' === $post->post_type ) {
+			$new_post_data['post_status'] = 'publish';
 		}
 
 		if ( ! empty( $settings['copy_slug'] ) && 'rewrite_republish' !== $mode ) {
@@ -342,7 +348,10 @@ class Oli_DP_Duplicator {
 	}
 
 	/**
-	 * Copy attachments as new attachment posts pointing at the same files.
+	 * Copy attachments as real attachment posts pointing at the same files.
+	 *
+	 * The physical file is shared with the original (Yoast-style). The new
+	 * row is `post_type=attachment` with `_wp_attached_file` and metadata.
 	 *
 	 * @since 1.0.0
 	 *
@@ -360,28 +369,56 @@ class Oli_DP_Duplicator {
 		);
 
 		foreach ( $attachments as $attachment ) {
+			$file     = get_post_meta( $attachment->ID, '_wp_attached_file', true );
+			$absolute = function_exists( 'get_attached_file' ) ? get_attached_file( $attachment->ID ) : '';
+			if ( ! $absolute ) {
+				$absolute = $file;
+			}
+
 			$new_attachment = array(
 				'post_title'     => $attachment->post_title,
 				'post_content'   => $attachment->post_content,
 				'post_excerpt'   => $attachment->post_excerpt,
-				'post_parent'    => $new_post_id,
-				'post_status'    => $attachment->post_status,
+				'post_status'    => 'inherit',
 				'post_mime_type' => $attachment->post_mime_type,
 				'guid'           => $attachment->guid,
+				'post_author'    => $attachment->post_author,
+				'menu_order'     => $attachment->menu_order,
 			);
 
-			$new_attachment_id = wp_insert_post( $new_attachment );
+			if ( function_exists( 'wp_insert_attachment' ) ) {
+				$new_attachment_id = wp_insert_attachment( $new_attachment, $absolute, $new_post_id, true );
+			} else {
+				$new_attachment['post_type']   = 'attachment';
+				$new_attachment['post_parent'] = $new_post_id;
+				$new_attachment_id             = wp_insert_post( $new_attachment, true );
+			}
 
-			if ( is_wp_error( $new_attachment_id ) ) {
+			if ( is_wp_error( $new_attachment_id ) || ! $new_attachment_id ) {
 				continue;
 			}
 
+			$excluded_keys = array_merge(
+				Oli_DP_Utils::default_internal_meta_keys(),
+				array( '_wp_attached_file' )
+			);
+
 			$attachment_meta = get_post_meta( $attachment->ID );
 			foreach ( $attachment_meta as $meta_key => $meta_values ) {
+				if ( Oli_DP_Utils::should_exclude_meta( $meta_key, $excluded_keys ) ) {
+					continue;
+				}
+
 				foreach ( $meta_values as $meta_value ) {
 					add_post_meta( $new_attachment_id, $meta_key, maybe_unserialize( $meta_value ) );
 				}
 			}
+
+			if ( $file && ! get_post_meta( $new_attachment_id, '_wp_attached_file', true ) ) {
+				update_post_meta( $new_attachment_id, '_wp_attached_file', $file );
+			}
+
+			update_post_meta( $new_attachment_id, '_dp_original', $attachment->ID );
 		}
 	}
 

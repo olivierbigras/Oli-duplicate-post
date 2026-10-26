@@ -40,7 +40,7 @@ class Oli_DP_Hooks {
 		$nonce   = isset( $_GET['_wpnonce'] ) ? sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 
 		if ( ! $post_id || ! wp_verify_nonce( $nonce, 'oli_dp_duplicate_' . $post_id ) ) {
-			wp_die( esc_html__( 'Security check failed.', 'oli-duplicate-post' ) );
+			self::forbid( __( 'Security check failed.', 'oli-duplicate-post' ) );
 		}
 
 		self::process_duplicate( $post_id, $action );
@@ -53,14 +53,14 @@ class Oli_DP_Hooks {
 	 */
 	public static function handle_duplicate_action() {
 		if ( ! isset( $_POST['post_id'] ) || ! isset( $_POST['oli_dp_nonce'] ) ) {
-			wp_die( esc_html__( 'Invalid request.', 'oli-duplicate-post' ) );
+			self::forbid( __( 'Invalid request.', 'oli-duplicate-post' ) );
 		}
 
 		$post_id = absint( wp_unslash( $_POST['post_id'] ) );
 		$nonce   = sanitize_text_field( wp_unslash( $_POST['oli_dp_nonce'] ) );
 
 		if ( ! wp_verify_nonce( $nonce, 'oli_dp_duplicate_' . $post_id ) ) {
-			wp_die( esc_html__( 'Security check failed.', 'oli-duplicate-post' ) );
+			self::forbid( __( 'Security check failed.', 'oli-duplicate-post' ) );
 		}
 
 		$mode = isset( $_POST['mode'] ) ? sanitize_key( wp_unslash( $_POST['mode'] ) ) : 'clone';
@@ -80,7 +80,7 @@ class Oli_DP_Hooks {
 	 */
 	private static function process_duplicate( $post_id, $action ) {
 		if ( ! Oli_DP_Permissions::can_duplicate( $post_id ) ) {
-			wp_die( esc_html__( 'You do not have permission to duplicate this post.', 'oli-duplicate-post' ) );
+			self::forbid( __( 'You do not have permission to duplicate this post.', 'oli-duplicate-post' ) );
 		}
 
 		$mode_map = array(
@@ -90,14 +90,14 @@ class Oli_DP_Hooks {
 		);
 
 		if ( ! isset( $mode_map[ $action ] ) ) {
-			wp_die( esc_html__( 'Invalid action.', 'oli-duplicate-post' ) );
+			self::forbid( __( 'Invalid action.', 'oli-duplicate-post' ) );
 		}
 
 		$mode        = $mode_map[ $action ];
 		$new_post_id = Oli_DP_Duplicator::duplicate( $post_id, $mode );
 
 		if ( is_wp_error( $new_post_id ) ) {
-			wp_die( esc_html( $new_post_id->get_error_message() ) );
+			self::forbid( $new_post_id->get_error_message() );
 		}
 
 		wp_safe_redirect( self::get_after_duplicate_redirect( $post_id, $new_post_id, $mode ) );
@@ -170,6 +170,21 @@ class Oli_DP_Hooks {
 			<p><?php echo esc_html( $message ); ?></p>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Halt an invalid or unauthorized duplicate request with HTTP 403.
+	 *
+	 * @since 1.0.1
+	 *
+	 * @param string $message Unescaped message.
+	 */
+	private static function forbid( $message ) {
+		wp_die(
+			esc_html( $message ),
+			esc_html__( 'Forbidden', 'oli-duplicate-post' ),
+			array( 'response' => 403 )
+		);
 	}
 
 	/**

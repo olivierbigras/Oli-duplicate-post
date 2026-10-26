@@ -53,7 +53,14 @@ class Oli_DP_Utils_Test extends TestCase {
 
 		$this->assertContains( '_oli_dp_original_post', $keys );
 		$this->assertContains( '_oli_dp_rewrite_copy', $keys );
+		$this->assertContains( '_dp_original', $keys );
 		$this->assertContains( '_thumbnail_id', $keys );
+	}
+
+	public function test_sanitize_title_affix_keeps_leading_and_trailing_spaces() {
+		$this->assertSame( 'Copy of ', Oli_DP_Utils::sanitize_title_affix( 'Copy of ' ) );
+		$this->assertSame( ' (Copy)', Oli_DP_Utils::sanitize_title_affix( ' (Copy)' ) );
+		$this->assertSame( 'Copy of ', Oli_DP_Utils::sanitize_title_affix( '<em>Copy of </em>' ) );
 	}
 
 	public function test_woocommerce_excludes_sales_and_ratings() {

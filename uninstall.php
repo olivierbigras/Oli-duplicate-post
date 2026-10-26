@@ -18,9 +18,10 @@ global $wpdb;
 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 $wpdb->query(
 	$wpdb->prepare(
-		"DELETE FROM {$wpdb->postmeta} WHERE meta_key IN (%s, %s)",
+		"DELETE FROM {$wpdb->postmeta} WHERE meta_key IN (%s, %s, %s)",
 		'_oli_dp_original_post',
-		'_oli_dp_rewrite_copy'
+		'_oli_dp_rewrite_copy',
+		'_dp_original'
 	)
 );
 

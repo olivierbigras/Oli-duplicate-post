@@ -4,7 +4,7 @@ Tags: duplicate, clone, copy, post, page
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -27,7 +27,7 @@ Contact: oli@olivierbigras.com
 
 * **Access points**
   * Row actions in the post list
-  * Bulk Clone and New Draft
+  * Bulk Clone, New Draft, and Rewrite & Republish
   * Admin bar (admin and front-end singular views)
   * Classic editor meta box
   * Block editor sidebar panel and Options menu
@@ -46,7 +46,7 @@ Contact: oli@olivierbigras.com
   * Products can be enabled like any other post type
   * Sales and rating stats are not copied
   * SKUs are made unique
-  * Variations are copied with the parent product
+  * Variations are copied as published children, then the parent is synced
 
 * **Developer API**
   * Template tag: `oli_dp_duplicate_post()`
@@ -140,6 +140,17 @@ This plugin does not call any external service. Clone, New Draft, and Rewrite & 
 
 == Changelog ==
 
+= 1.0.1 =
+* Product variations are published and synced so the copy can be purchased
+* Title prefix and suffix keep leading and trailing spaces
+* Attachment copies are real attachments that share the original file
+* Invalid duplicate URLs return HTTP 403
+* Admin bar Duplicate This is limited to single edit screens and singular views
+* Rewrite & Republish permanently deletes the working copy
+* Copies store `_dp_original` and link back to the original
+* Bulk actions include Rewrite & Republish
+* Products are not enabled by default
+
 = 1.0.0 =
 * WordPress.org-ready release: no load_plugin_textdomain(), GPLv2 or later, unique oli_dp_ prefix
 * Featured image is now a copy setting
@@ -163,6 +174,9 @@ This plugin does not call any external service. Clone, New Draft, and Rewrite & 
 * Initial release
 
 == Upgrade Notice ==
+
+= 1.0.1 =
+Fixes purchasable variable-product copies, title spacing, attachment copies, 403s on forged URLs, and admin-bar list-screen links.
 
 = 1.0.0 =
 Adds featured-image settings, scheduled Rewrite & Republish, WooCommerce handling, and WordPress.org compliance fixes.
