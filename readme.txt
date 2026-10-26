@@ -148,7 +148,7 @@ This plugin does not call any external service. Clone, New Draft, and Rewrite & 
 == Changelog ==
 
 = 1.0.7 =
-* Readme : section Screenshots ajoutée
+* Readme: added Screenshots section.
 
 = 1.0.6 =
 * Merged rewrite copies stay draft for any non-draft status (private, pending, publish, future), including REST
@@ -213,7 +213,7 @@ This plugin does not call any external service. Clone, New Draft, and Rewrite & 
 == Upgrade Notice ==
 
 = 1.0.7 =
-Readme : section Screenshots ajoutée
+Readme: added Screenshots section.
 
 = 1.0.6 =
 Keeps already-merged rewrite copies as draft, skips empty admin cleanup queries, and sends the block-editor meta-box save back to the original.
