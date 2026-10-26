@@ -4,7 +4,7 @@ Tags: duplicate, clone, copy, post, page
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.0.2
+Stable tag: 1.0.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -140,6 +140,10 @@ This plugin does not call any external service. Clone, New Draft, and Rewrite & 
 
 == Changelog ==
 
+= 1.0.3 =
+* Gutenberg Rewrite & Republish no longer 500s: the copy is deleted after the meta-box-loader request or 60 seconds later
+* Cancelling a schedule and publishing now clears `_oli_dp_scheduled_gmt` so the copy merges
+
 = 1.0.2 =
 * Rewrite & Republish merges after save and deletes the copy after the REST/editor/cron response
 * Variation copies keep their original status
@@ -181,6 +185,9 @@ This plugin does not call any external service. Clone, New Draft, and Rewrite & 
 * Initial release
 
 == Upgrade Notice ==
+
+= 1.0.3 =
+Fixes the Gutenberg 500 after Rewrite & Republish and merging after a cancelled schedule.
 
 = 1.0.2 =
 Fixes REST/editor republish notices, preserves private variation status, writes WooCommerce lookup rows, and leaves Yoast `_dp_original` meta on uninstall.

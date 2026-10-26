@@ -468,6 +468,14 @@ if ( false !== strpos( $plugin_php, 'wp_delete_post' ) && false === strpos( $plu
 }
 
 ++$total_tests;
+if ( false !== strpos( $plugin_php, 'oli_dp_delete_rewrite_copy' ) && false !== strpos( $plugin_php, 'meta-box-loader' ) ) {
+	oli_dp_test_pass( 'Rewrite copy deletion waits for Gutenberg meta-box-loader' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Gutenberg meta-box-loader delete path missing' );
+}
+
+++$total_tests;
 if ( false !== strpos( $plugin_php, 'gmt_mysql_is_future' ) ) {
 	oli_dp_test_pass( 'Scheduled republish compares GMT timestamps' );
 	++$passed_tests;

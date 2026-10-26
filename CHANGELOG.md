@@ -5,6 +5,12 @@ All notable changes to Oli Duplicate Post will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-10-26
+
+### Fixed
+- Gutenberg Rewrite & Republish no longer 500s: the copy stays until the meta-box-loader request, with a 60-second cron fallback
+- Cancelling a schedule and publishing now clears `_oli_dp_scheduled_gmt` so the copy merges using the current `post_date_gmt`
+
 ## [1.0.2] - 2026-10-26
 
 ### Changed
@@ -93,6 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release of Oli Duplicate Post
 
+[1.0.3]: https://github.com/olivierbigras/Oli-duplicate-post/releases/tag/1.0.3
 [1.0.2]: https://github.com/olivierbigras/Oli-duplicate-post/releases/tag/1.0.2
 [1.0.1]: https://github.com/olivierbigras/Oli-duplicate-post/releases/tag/1.0.1
 [1.0.0]: https://github.com/olivierbigras/Oli-duplicate-post/releases/tag/1.0.0

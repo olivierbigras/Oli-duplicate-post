@@ -62,6 +62,8 @@ class Oli_DP_Rewrite_Republish {
 		add_action( 'transition_post_status', array( __CLASS__, 'handle_publish' ), 10, 3 );
 		add_action( 'wp_after_insert_post', array( __CLASS__, 'merge_after_save' ), 20, 3 );
 		add_filter( 'rest_post_dispatch', array( __CLASS__, 'after_rest_response' ), 99 );
+		add_action( 'admin_init', array( __CLASS__, 'queue_delete_after_metabox' ) );
+		add_action( 'oli_dp_delete_rewrite_copy', array( __CLASS__, 'delete_rewrite_copy' ) );
 		add_action( 'shutdown', array( __CLASS__, 'delete_merged_copies' ), 20 );
 		add_action( 'admin_notices', array( __CLASS__, 'show_rewrite_notice' ) );
 		add_filter( 'display_post_states', array( __CLASS__, 'add_post_state' ), 10, 2 );
@@ -84,15 +86,21 @@ class Oli_DP_Rewrite_Republish {
 	 * @param WP_Post $post       Post object.
 	 */
 	public static function handle_publish( $new_status, $old_status, $post ) {
-		unset( $old_status );
-
 		if ( self::$merging || ! $post instanceof WP_Post ) {
 			return;
 		}
 
-		if ( 'future' === $new_status && $post->post_date_gmt && '0000-00-00 00:00:00' !== $post->post_date_gmt ) {
-			update_post_meta( $post->ID, '_oli_dp_scheduled_gmt', $post->post_date_gmt );
+		if ( 'future' === $new_status ) {
+			if ( $post->post_date_gmt && '0000-00-00 00:00:00' !== $post->post_date_gmt ) {
+				update_post_meta( $post->ID, '_oli_dp_scheduled_gmt', $post->post_date_gmt );
+			} else {
+				delete_post_meta( $post->ID, '_oli_dp_scheduled_gmt' );
+			}
 			return;
+		}
+
+		if ( 'future' === $old_status ) {
+			delete_post_meta( $post->ID, '_oli_dp_scheduled_gmt' );
 		}
 
 		if ( 'publish' !== $new_status ) {
@@ -166,36 +174,103 @@ class Oli_DP_Rewrite_Republish {
 	 * @return mixed
 	 */
 	public static function after_rest_response( $response ) {
-		self::finish_pending_work();
+		self::finish_pending_merges();
 		return $response;
 	}
 
 	/**
-	 * Merge leftover copies and permanently delete those already merged.
+	 * Queue a Gutenberg meta-box-loader copy for deletion after this request.
+	 *
+	 * Gutenberg POSTs `post.php?meta-box-loader=1` after the REST save. The
+	 * copy must still exist for that request, then it can be removed.
+	 *
+	 * @since 1.0.3
+	 */
+	public static function queue_delete_after_metabox() {
+		if ( ! self::is_meta_box_loader_request() ) {
+			return;
+		}
+
+		$post_id = 0;
+		if ( isset( $_REQUEST['post'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$post_id = absint( wp_unslash( $_REQUEST['post'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		} elseif ( isset( $_REQUEST['post_ID'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$post_id = absint( wp_unslash( $_REQUEST['post_ID'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		}
+
+		if ( ! $post_id || ! get_post_meta( $post_id, '_oli_dp_pending_delete', true ) ) {
+			return;
+		}
+
+		self::$pending_deletes[] = $post_id;
+	}
+
+	/**
+	 * Cron callback: delete a rewrite copy marked for delayed removal.
+	 *
+	 * @since 1.0.3
+	 *
+	 * @param int $rewrite_id Rewrite copy ID.
+	 */
+	public static function delete_rewrite_copy( $rewrite_id ) {
+		$rewrite_id = absint( $rewrite_id );
+		if ( ! $rewrite_id || ! get_post( $rewrite_id ) ) {
+			return;
+		}
+
+		if ( ! get_post_meta( $rewrite_id, '_oli_dp_pending_delete', true ) ) {
+			return;
+		}
+
+		self::unschedule_copy_deletion( $rewrite_id );
+		wp_delete_post( $rewrite_id, true );
+	}
+
+	/**
+	 * Merge leftover copies and delete those that are safe to remove now.
+	 *
+	 * REST saves skip deletion so Gutenberg's follow-up meta-box request can
+	 * still load the copy. Cron and classic-editor requests delete immediately.
 	 *
 	 * @since 1.0.2
 	 */
 	public static function delete_merged_copies() {
-		self::finish_pending_work();
+		self::finish_pending_merges();
+
+		if ( self::should_defer_copy_deletion() ) {
+			return;
+		}
+
+		self::delete_queued_copies();
 	}
 
 	/**
-	 * Run queued merges (if the after-insert hook was skipped) then delete.
+	 * Run queued merges if wp_after_insert_post was skipped.
 	 *
-	 * @since 1.0.2
+	 * @since 1.0.3
 	 */
-	private static function finish_pending_work() {
-		if ( ! empty( self::$pending_merges ) ) {
-			foreach ( self::$pending_merges as $rewrite_id => $original_id ) {
-				$post = get_post( $rewrite_id );
-				if ( ! $post || 'publish' !== $post->post_status || self::has_future_publish_date( $post ) ) {
-					continue;
-				}
-				self::run_merge( $rewrite_id, $original_id );
-			}
-			self::$pending_merges = array();
+	private static function finish_pending_merges() {
+		if ( empty( self::$pending_merges ) ) {
+			return;
 		}
 
+		foreach ( self::$pending_merges as $rewrite_id => $original_id ) {
+			$post = get_post( $rewrite_id );
+			if ( ! $post || 'publish' !== $post->post_status || self::has_future_publish_date( $post ) ) {
+				continue;
+			}
+			self::run_merge( $rewrite_id, $original_id );
+		}
+
+		self::$pending_merges = array();
+	}
+
+	/**
+	 * Permanently delete copies queued for this request.
+	 *
+	 * @since 1.0.3
+	 */
+	private static function delete_queued_copies() {
 		if ( empty( self::$pending_deletes ) ) {
 			return;
 		}
@@ -204,9 +279,69 @@ class Oli_DP_Rewrite_Republish {
 		self::$pending_deletes = array();
 
 		foreach ( $ids as $rewrite_id ) {
-			if ( get_post( $rewrite_id ) ) {
-				wp_delete_post( $rewrite_id, true );
+			if ( ! get_post( $rewrite_id ) ) {
+				continue;
 			}
+
+			self::unschedule_copy_deletion( $rewrite_id );
+			wp_delete_post( $rewrite_id, true );
+		}
+	}
+
+	/**
+	 * Whether this request must keep the rewrite copy until a later request.
+	 *
+	 * @since 1.0.3
+	 *
+	 * @return bool
+	 */
+	private static function should_defer_copy_deletion() {
+		if ( wp_doing_cron() || self::is_meta_box_loader_request() ) {
+			return false;
+		}
+
+		return self::is_rest_request();
+	}
+
+	/**
+	 * Whether this is Gutenberg's meta-box save follow-up.
+	 *
+	 * @since 1.0.3
+	 *
+	 * @return bool
+	 */
+	private static function is_meta_box_loader_request() {
+		return isset( $_REQUEST['meta-box-loader'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+	}
+
+	/**
+	 * Schedule a fallback deletion about 60 seconds later.
+	 *
+	 * @since 1.0.3
+	 *
+	 * @param int $rewrite_id Rewrite copy ID.
+	 */
+	private static function schedule_copy_deletion( $rewrite_id ) {
+		$rewrite_id = (int) $rewrite_id;
+		if ( ! $rewrite_id || wp_next_scheduled( 'oli_dp_delete_rewrite_copy', array( $rewrite_id ) ) ) {
+			return;
+		}
+
+		wp_schedule_single_event( time() + 60, 'oli_dp_delete_rewrite_copy', array( $rewrite_id ) );
+	}
+
+	/**
+	 * Cancel a scheduled rewrite-copy deletion.
+	 *
+	 * @since 1.0.3
+	 *
+	 * @param int $rewrite_id Rewrite copy ID.
+	 */
+	private static function unschedule_copy_deletion( $rewrite_id ) {
+		$rewrite_id = (int) $rewrite_id;
+		$timestamp  = wp_next_scheduled( 'oli_dp_delete_rewrite_copy', array( $rewrite_id ) );
+		if ( $timestamp ) {
+			wp_unschedule_event( $timestamp, 'oli_dp_delete_rewrite_copy', array( $rewrite_id ) );
 		}
 	}
 
@@ -243,8 +378,8 @@ class Oli_DP_Rewrite_Republish {
 	/**
 	 * Whether a rewrite copy still has a future GMT publish date.
 	 *
-	 * Compares UTC (`time()`) to `post_date_gmt` or the stored schedule so a
-	 * +60s REST schedule is not merged when status flips to publish early.
+	 * Compares UTC (`time()`) to the current `post_date_gmt` so a +60s
+	 * schedule is not merged early, and a cancelled schedule can publish now.
 	 *
 	 * @since 1.0.2
 	 *
@@ -252,10 +387,7 @@ class Oli_DP_Rewrite_Republish {
 	 * @return bool
 	 */
 	private static function has_future_publish_date( $post ) {
-		$candidates = array(
-			get_post_meta( $post->ID, '_oli_dp_scheduled_gmt', true ),
-			$post->post_date_gmt,
-		);
+		$candidates = array( $post->post_date_gmt );
 
 		if ( $post->post_date && function_exists( 'get_gmt_from_date' ) ) {
 			$candidates[] = get_gmt_from_date( $post->post_date );
@@ -394,8 +526,13 @@ class Oli_DP_Rewrite_Republish {
 		delete_post_meta( $original_post_id, '_oli_dp_rewrite_copy' );
 		delete_post_meta( $rewrite_post_id, '_oli_dp_original_post' );
 		delete_post_meta( $rewrite_post_id, '_oli_dp_scheduled_gmt' );
+		update_post_meta( $rewrite_post_id, '_oli_dp_pending_delete', '1' );
 
-		self::$pending_deletes[] = (int) $rewrite_post_id;
+		if ( self::should_defer_copy_deletion() ) {
+			self::schedule_copy_deletion( (int) $rewrite_post_id );
+		} else {
+			self::$pending_deletes[] = (int) $rewrite_post_id;
+		}
 
 		/**
 		 * Fires after a rewrite copy is merged back to the original.

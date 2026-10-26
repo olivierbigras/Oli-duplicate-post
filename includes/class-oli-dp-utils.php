@@ -207,6 +207,7 @@ class Oli_DP_Utils {
 			'_oli_dp_original_post',
 			'_oli_dp_rewrite_copy',
 			'_oli_dp_scheduled_gmt',
+			'_oli_dp_pending_delete',
 		);
 	}
 

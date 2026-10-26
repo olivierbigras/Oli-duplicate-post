@@ -211,6 +211,112 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 		$this->assertNotNull( get_post( $rewrite_id ) );
 	}
 
+	public function test_cancel_schedule_then_publish_now_merges() {
+		$original_id = self::factory()->post->create(
+			array(
+				'post_title'   => 'Stay Live',
+				'post_content' => 'Current',
+				'post_status'  => 'publish',
+			)
+		);
+
+		$rewrite_id = Oli_DP_Duplicator::duplicate( $original_id, 'rewrite_republish' );
+		$gmt        = gmdate( 'Y-m-d H:i:s', time() + HOUR_IN_SECONDS );
+		$local      = get_date_from_gmt( $gmt );
+
+		wp_update_post(
+			array(
+				'ID'            => $rewrite_id,
+				'post_content'  => 'Cancelled schedule',
+				'post_status'   => 'future',
+				'post_date'     => $local,
+				'post_date_gmt' => $gmt,
+				'edit_date'     => true,
+			)
+		);
+
+		$this->assertNotEmpty( get_post_meta( $rewrite_id, '_oli_dp_scheduled_gmt', true ) );
+
+		wp_update_post(
+			array(
+				'ID'            => $rewrite_id,
+				'post_status'   => 'draft',
+				'post_date'     => current_time( 'mysql' ),
+				'post_date_gmt' => current_time( 'mysql', true ),
+				'edit_date'     => true,
+			)
+		);
+
+		$this->assertSame( '', get_post_meta( $rewrite_id, '_oli_dp_scheduled_gmt', true ) );
+
+		wp_publish_post( $rewrite_id );
+
+		$this->assertSame( 'Cancelled schedule', get_post( $original_id )->post_content );
+		Oli_DP_Rewrite_Republish::delete_merged_copies();
+		$this->assertNull( get_post( $rewrite_id ) );
+	}
+
+	public function test_metabox_loader_deletes_merged_rewrite_copy() {
+		$original_id = self::factory()->post->create(
+			array(
+				'post_title'   => 'Live Article',
+				'post_content' => 'Old body',
+				'post_status'  => 'publish',
+			)
+		);
+
+		$rewrite_id = Oli_DP_Duplicator::duplicate( $original_id, 'rewrite_republish' );
+		wp_update_post(
+			array(
+				'ID'           => $rewrite_id,
+				'post_content' => 'New body',
+			)
+		);
+		wp_publish_post( $rewrite_id );
+
+		$this->assertSame( 'New body', get_post( $original_id )->post_content );
+		$this->assertNotNull( get_post( $rewrite_id ) );
+
+		$_REQUEST['meta-box-loader'] = '1';
+		$_REQUEST['post']            = (string) $rewrite_id;
+		Oli_DP_Rewrite_Republish::queue_delete_after_metabox();
+		Oli_DP_Rewrite_Republish::delete_merged_copies();
+
+		$this->assertNull( get_post( $rewrite_id ) );
+		unset( $_REQUEST['meta-box-loader'], $_REQUEST['post'] );
+	}
+
+	public function test_rest_republish_defers_delete_and_schedules_cron() {
+		$_SERVER['REQUEST_URI'] = '/wp-json/wp/v2/posts/1';
+
+		$original_id = self::factory()->post->create(
+			array(
+				'post_title'   => 'Live Article',
+				'post_content' => 'Old body',
+				'post_status'  => 'publish',
+			)
+		);
+
+		$rewrite_id = Oli_DP_Duplicator::duplicate( $original_id, 'rewrite_republish' );
+		wp_update_post(
+			array(
+				'ID'           => $rewrite_id,
+				'post_content' => 'New body',
+			)
+		);
+		wp_publish_post( $rewrite_id );
+
+		$this->assertSame( 'New body', get_post( $original_id )->post_content );
+		$this->assertNotNull( get_post( $rewrite_id ) );
+		$this->assertSame( '1', get_post_meta( $rewrite_id, '_oli_dp_pending_delete', true ) );
+		$this->assertNotFalse( wp_next_scheduled( 'oli_dp_delete_rewrite_copy', array( $rewrite_id ) ) );
+
+		Oli_DP_Rewrite_Republish::delete_rewrite_copy( $rewrite_id );
+		$this->assertNull( get_post( $rewrite_id ) );
+
+		unset( $_SERVER['REQUEST_URI'] );
+	}
+
 	public function test_featured_image_setting_is_honored() {
 		$original_id = self::factory()->post->create( array( 'post_status' => 'publish' ) );
 		$image_id    = self::factory()->attachment->create();
