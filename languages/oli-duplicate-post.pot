@@ -2,7 +2,7 @@
 # This file is distributed under the GPL v2 or later.
 msgid ""
 msgstr ""
-"Project-Id-Version: Oli Duplicate Post 0.1.0\n"
+"Project-Id-Version: Oli Duplicate Post 1.0.7\n"
 "Report-Msgid-Bugs-To: https://olivierbigras.com/\n"
 "POT-Creation-Date: 2026-10-19 17:00:00+00:00\n"
 "MIME-Version: 1.0\n"

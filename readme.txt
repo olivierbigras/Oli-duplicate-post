@@ -4,7 +4,7 @@ Tags: duplicate, clone, copy, post, page
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.0.6
+Stable tag: 1.0.7
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -134,11 +134,21 @@ Yes. Choose the allowed roles and post types on the settings screen.
 
 Email oli@olivierbigras.com or open an issue at https://github.com/olivierbigras/Oli-duplicate-post
 
+== Screenshots ==
+
+1. Settings screen, part 1: choose which elements are copied when duplicating a post.
+2. Posts list with Duplicate now, Duplicate and edit, and Rewrite and republish row actions.
+3. Compare Changes screen showing the rewritten version side by side with the original.
+4. Settings screen, part 2: title prefix and suffix, excluded meta and taxonomies, post types, roles and UI locations.
+
 == External services ==
 
 This plugin does not call any external service. Clone, New Draft, and Rewrite & Republish run entirely on your site. No visitor or editor data is sent to a third party.
 
 == Changelog ==
+
+= 1.0.7 =
+* Readme : section Screenshots ajoutée
 
 = 1.0.6 =
 * Merged rewrite copies stay draft for any non-draft status (private, pending, publish, future), including REST
@@ -201,6 +211,9 @@ This plugin does not call any external service. Clone, New Draft, and Rewrite & 
 * Initial release
 
 == Upgrade Notice ==
+
+= 1.0.7 =
+Readme : section Screenshots ajoutée
 
 = 1.0.6 =
 Keeps already-merged rewrite copies as draft, skips empty admin cleanup queries, and sends the block-editor meta-box save back to the original.
