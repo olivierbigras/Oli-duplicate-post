@@ -152,17 +152,18 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 
 		wp_update_post(
 			array(
-				'ID'            => $rewrite_id,
-				'post_content'  => 'Scheduled rewrite',
-				'post_status'   => 'future',
-				'post_date'     => gmdate( 'Y-m-d H:i:s', time() + DAY_IN_SECONDS ),
-				'post_date_gmt' => gmdate( 'Y-m-d H:i:s', time() + DAY_IN_SECONDS ),
+				'ID'           => $rewrite_id,
+				'post_content' => 'Scheduled rewrite',
+				'post_status'  => 'draft',
 			)
 		);
 
+		$rewrite = get_post( $rewrite_id );
+		Oli_DP_Rewrite_Republish::handle_publish( 'future', 'draft', $rewrite );
+
 		$this->assertSame( 'Current', get_post( $original_id )->post_content );
-		$this->assertSame( 'future', get_post_status( $rewrite_id ) );
 		$this->assertSame( (string) $rewrite_id, get_post_meta( $original_id, '_oli_dp_rewrite_copy', true ) );
+		$this->assertSame( 'draft', get_post_status( $rewrite_id ) );
 
 		wp_publish_post( $rewrite_id );
 
@@ -172,7 +173,7 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 	public function test_featured_image_setting_is_honored() {
 		$original_id = self::factory()->post->create( array( 'post_status' => 'publish' ) );
 		$image_id    = self::factory()->attachment->create();
-		set_post_thumbnail( $original_id, $image_id );
+		update_post_meta( $original_id, '_thumbnail_id', $image_id );
 
 		$settings                        = Oli_DP_Settings::get_settings();
 		$settings['copy_featured_image'] = false;

@@ -81,8 +81,11 @@ class Oli_DP_Duplicator {
 
 		self::copy_taxonomies( $post_id, $new_post_id, $settings );
 
-		if ( ! empty( $settings['copy_featured_image'] ) && has_post_thumbnail( $post_id ) ) {
-			set_post_thumbnail( $new_post_id, get_post_thumbnail_id( $post_id ) );
+		if ( ! empty( $settings['copy_featured_image'] ) ) {
+			$thumbnail_id = get_post_thumbnail_id( $post_id );
+			if ( $thumbnail_id ) {
+				update_post_meta( $new_post_id, '_thumbnail_id', $thumbnail_id );
+			}
 		}
 
 		if ( ! empty( $settings['copy_attachments'] ) ) {

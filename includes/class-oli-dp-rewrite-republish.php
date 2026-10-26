@@ -206,9 +206,9 @@ class Oli_DP_Rewrite_Republish {
 
 		$thumbnail_id = get_post_thumbnail_id( $rewrite_post_id );
 		if ( $thumbnail_id ) {
-			set_post_thumbnail( $original_post_id, $thumbnail_id );
+			update_post_meta( $original_post_id, '_thumbnail_id', $thumbnail_id );
 		} else {
-			delete_post_thumbnail( $original_post_id );
+			delete_post_meta( $original_post_id, '_thumbnail_id' );
 		}
 
 		$template = get_page_template_slug( $rewrite_post_id );
