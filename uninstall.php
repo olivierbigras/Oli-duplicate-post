@@ -12,17 +12,21 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 }
 
 delete_option( 'oli_dp_settings' );
+delete_option( 'oli_dp_db_version' );
 
 // Clear every scheduled Rewrite & Republish cleanup event, regardless of args.
 wp_unschedule_hook( 'oli_dp_delete_rewrite_copy' );
 
 global $wpdb;
 
-// Do not delete `_dp_original`: Yoast Duplicate Post uses the same key.
+// `_oli_dp_source_post` replaced `_dp_original` in 1.0.10. The legacy `_dp_original` rows are not
+// deleted: Yoast Duplicate Post writes the same key, so removing them could break its data.
 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 $wpdb->query(
 	$wpdb->prepare(
-		"DELETE FROM {$wpdb->postmeta} WHERE meta_key IN (%s, %s, %s, %s)",
+		'DELETE FROM %i WHERE meta_key IN (%s, %s, %s, %s, %s)',
+		$wpdb->postmeta,
+		'_oli_dp_source_post',
 		'_oli_dp_original_post',
 		'_oli_dp_rewrite_copy',
 		'_oli_dp_scheduled_gmt',
@@ -33,7 +37,8 @@ $wpdb->query(
 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 $wpdb->query(
 	$wpdb->prepare(
-		"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+		'DELETE FROM %i WHERE option_name LIKE %s OR option_name LIKE %s',
+		$wpdb->options,
 		$wpdb->esc_like( '_transient_oli_dp_' ) . '%',
 		$wpdb->esc_like( '_transient_timeout_oli_dp_' ) . '%'
 	)

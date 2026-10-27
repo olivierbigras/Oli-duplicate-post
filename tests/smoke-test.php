@@ -581,7 +581,7 @@ if ( false !== strpos( $uninstall_php, "wp_unschedule_hook( 'oli_dp_delete_rewri
 }
 
 ++$total_tests;
-if ( false === strpos( $uninstall_php, "'_dp_original'" ) && false !== strpos( $uninstall_php, '_oli_dp_original_post' ) ) {
+if ( false === strpos( $uninstall_php, "'_dp_original'" ) && false !== strpos( $uninstall_php, '_oli_dp_original_post' ) && false !== strpos( $uninstall_php, "'_oli_dp_source_post'" ) ) {
 	oli_dp_test_pass( 'Uninstall leaves shared _dp_original meta' );
 	++$passed_tests;
 } else {
@@ -589,11 +589,11 @@ if ( false === strpos( $uninstall_php, "'_dp_original'" ) && false !== strpos( $
 }
 
 ++$total_tests;
-if ( false !== strpos( $plugin_php, "'_dp_original'" ) ) {
-	oli_dp_test_pass( 'Copies store _dp_original meta' );
+if ( false !== strpos( $plugin_php, "SOURCE_META_KEY = '_oli_dp_source_post'" ) && false === strpos( $plugin_php, 'update_post_meta( $new_post_id, \'_dp_original\'' ) ) {
+	oli_dp_test_pass( 'Copies store prefixed _oli_dp_source_post meta' );
 	++$passed_tests;
 } else {
-	oli_dp_test_fail( '_dp_original meta is missing' );
+	oli_dp_test_fail( '_oli_dp_source_post meta is missing' );
 }
 
 ++$total_tests;

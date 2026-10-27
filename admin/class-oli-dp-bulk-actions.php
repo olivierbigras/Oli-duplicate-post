@@ -119,7 +119,13 @@ class Oli_DP_Bulk_Actions {
 			}
 		}
 
-		return add_query_arg( 'oli_dp_bulk_duplicated', $duplicated_count, $redirect_to );
+		return add_query_arg(
+			array(
+				'oli_dp_bulk_duplicated' => $duplicated_count,
+				'oli_dp_notice_nonce'    => wp_create_nonce( 'oli_dp_notice' ),
+			),
+			$redirect_to
+		);
 	}
 
 	/**
@@ -128,7 +134,12 @@ class Oli_DP_Bulk_Actions {
 	 * @since 1.0.0
 	 */
 	public static function show_bulk_action_notice() {
-		if ( ! isset( $_REQUEST['oli_dp_bulk_duplicated'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		if ( ! isset( $_GET['oli_dp_notice_nonce'] )
+			|| ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_GET['oli_dp_notice_nonce'] ) ), 'oli_dp_notice' ) ) {
+			return;
+		}
+
+		if ( ! isset( $_GET['oli_dp_bulk_duplicated'] ) || ! current_user_can( 'edit_posts' ) ) {
 			return;
 		}
 
@@ -136,7 +147,7 @@ class Oli_DP_Bulk_Actions {
 			return;
 		}
 
-		$count = absint( wp_unslash( $_REQUEST['oli_dp_bulk_duplicated'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$count = absint( wp_unslash( $_GET['oli_dp_bulk_duplicated'] ) );
 
 		if ( $count > 0 ) {
 			printf(

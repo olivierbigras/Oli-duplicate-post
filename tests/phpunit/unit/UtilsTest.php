@@ -56,6 +56,7 @@ class Oli_DP_Utils_Test extends TestCase {
 		$this->assertContains( '_oli_dp_scheduled_gmt', $keys );
 		$this->assertContains( '_oli_dp_pending_delete', $keys );
 		$this->assertContains( '_dp_original', $keys );
+		$this->assertContains( '_oli_dp_source_post', $keys );
 		$this->assertContains( '_thumbnail_id', $keys );
 	}
 

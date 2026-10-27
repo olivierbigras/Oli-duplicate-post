@@ -19,6 +19,93 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Oli_DP_Utils {
 
 	/**
+	 * Meta key storing the source post ID on every copy.
+	 *
+	 * Replaces the unprefixed `_dp_original` key written up to 1.0.9.
+	 *
+	 * @since 1.0.10
+	 */
+	const SOURCE_META_KEY = '_oli_dp_source_post';
+
+	/**
+	 * Option storing the data schema version.
+	 *
+	 * @since 1.0.10
+	 */
+	const DB_VERSION_OPTION = 'oli_dp_db_version';
+
+	/**
+	 * Run pending data migrations once per version (idempotent).
+	 *
+	 * @since 1.0.10
+	 */
+	public static function maybe_upgrade() {
+		if ( version_compare( (string) get_option( self::DB_VERSION_OPTION, '0' ), '1.0.10', '>=' ) ) {
+			return;
+		}
+
+		self::migrate_source_meta();
+		update_option( self::DB_VERSION_OPTION, '1.0.10', false );
+	}
+
+	/**
+	 * Copy legacy `_dp_original` values to `_oli_dp_source_post`.
+	 *
+	 * Only copies rows that do not have the new key yet, so running it twice
+	 * changes nothing. The legacy rows are left in place on purpose: Yoast
+	 * Duplicate Post writes the same key, and deleting it could break that
+	 * plugin's data. This plugin no longer writes or reads `_dp_original`.
+	 *
+	 * @since 1.0.10
+	 *
+	 * @return int Number of copied rows.
+	 */
+	public static function migrate_source_meta() {
+		global $wpdb;
+
+		$copied     = 0;
+		$batch_size = 0;
+		do {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- One-time migration batch.
+			$rows = $wpdb->get_results(
+				$wpdb->prepare(
+					'SELECT legacy.post_id, legacy.meta_value FROM %i legacy
+					LEFT JOIN %i newkey ON newkey.post_id = legacy.post_id AND newkey.meta_key = %s
+					WHERE legacy.meta_key = %s AND newkey.meta_id IS NULL
+					LIMIT %d',
+					$wpdb->postmeta,
+					$wpdb->postmeta,
+					self::SOURCE_META_KEY,
+					'_dp_original',
+					200
+				)
+			);
+
+			if ( empty( $rows ) ) {
+				break;
+			}
+
+			$batch_size  = count( $rows );
+			$batch_added = 0;
+			foreach ( $rows as $row ) {
+				$source_id = absint( $row->meta_value );
+				$post_id   = absint( $row->post_id );
+				if ( ! $post_id ) {
+					continue;
+				}
+				// A zero or invalid legacy value is stored as 0 so the row is not selected again.
+				if ( add_post_meta( $post_id, self::SOURCE_META_KEY, $source_id, true ) ) {
+					++$batch_added;
+				}
+			}
+			$copied += $batch_added;
+		} while ( 200 === $batch_size && $batch_added > 0 );
+
+		return $copied;
+	}
+
+
+	/**
 	 * Parse a comma-separated list or array into a trimmed list of values.
 	 *
 	 * @since 1.0.0
@@ -181,7 +268,7 @@ class Oli_DP_Utils {
 	 * @return int
 	 */
 	public static function get_original_post_id( $post_id ) {
-		$original_id = absint( get_post_meta( $post_id, '_dp_original', true ) );
+		$original_id = absint( get_post_meta( $post_id, self::SOURCE_META_KEY, true ) );
 		if ( $original_id ) {
 			return $original_id;
 		}
@@ -204,6 +291,7 @@ class Oli_DP_Utils {
 			'_wp_old_date',
 			'_thumbnail_id',
 			'_dp_original',
+			self::SOURCE_META_KEY,
 			'_oli_dp_original_post',
 			'_oli_dp_rewrite_copy',
 			'_oli_dp_scheduled_gmt',

@@ -4,7 +4,7 @@ Tags: duplicate, clone, copy, post, page
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.0.9
+Stable tag: 1.0.10
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -147,6 +147,15 @@ This plugin does not call any external service. Clone, New Draft, and Rewrite & 
 
 == Changelog ==
 
+= 1.0.10 - 2026-10-27 =
+* Security: duplicate, compare and notice requests verify a nonce before any other request value is read; the compare screen now always requires its nonce.
+* Security: the Gutenberg meta-box follow-up request is recognized only with the core meta-box-loader nonce and an edit capability check.
+* Security: the admin bar and editor helpers use the current post instead of reading the URL.
+* Copies now store their source in the prefixed `_oli_dp_source_post` meta. Existing `_dp_original` values are copied once on update and left in place.
+* Database queries use $wpdb->prepare() placeholders for table names (%i).
+* Notices with links are escaped as a whole with wp_kses().
+* Fixed a PHP deprecation notice (strip_tags null) on the hidden Compare Changes screen.
+
 = 1.0.9 - 2026-10-26 =
 * Uninstall now clears the scheduled Rewrite & Republish cleanup events.
 
@@ -217,6 +226,9 @@ This plugin does not call any external service. Clone, New Draft, and Rewrite & 
 * Initial release
 
 == Upgrade Notice ==
+
+= 1.0.10 =
+Security hardening. Source links of existing copies are migrated automatically to a prefixed meta key.
 
 = 1.0.9 =
 Uninstall now clears the scheduled Rewrite & Republish cleanup events.

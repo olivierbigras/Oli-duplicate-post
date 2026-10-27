@@ -58,7 +58,7 @@ class Oli_DP_Post_List {
 	}
 
 	/**
-	 * Render a link to the source post stored in `_dp_original`.
+	 * Render a link to the source post stored in `_oli_dp_source_post`.
 	 *
 	 * @since 1.0.1
 	 *

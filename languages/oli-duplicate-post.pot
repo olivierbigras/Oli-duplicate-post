@@ -2,14 +2,14 @@
 # This file is distributed under the GPLv2 or later.
 msgid ""
 msgstr ""
-"Project-Id-Version: Oli Duplicate Post 1.0.9\n"
+"Project-Id-Version: Oli Duplicate Post 1.0.10\n"
 "Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/oli-duplicate-post\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-10-27T00:18:15+00:00\n"
+"POT-Creation-Date: 2026-10-27T13:49:21+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: oli-duplicate-post\n"
@@ -82,7 +82,7 @@ msgid "Prepares an edited version that will replace this one"
 msgstr ""
 
 #. translators: %d: number of posts duplicated
-#: admin/class-oli-dp-bulk-actions.php:147
+#: admin/class-oli-dp-bulk-actions.php:158
 #, php-format
 msgid "%d post duplicated."
 msgid_plural "%d posts duplicated."
@@ -97,7 +97,7 @@ msgstr ""
 
 #: admin/class-oli-dp-meta-box.php:66
 #: includes/class-oli-dp-duplicator.php:40
-#: includes/class-oli-dp-hooks.php:83
+#: includes/class-oli-dp-hooks.php:88
 msgid "You do not have permission to duplicate this post."
 msgstr ""
 
@@ -129,7 +129,7 @@ msgid "Compare"
 msgstr ""
 
 #: admin/class-oli-dp-meta-box.php:229
-#: includes/class-oli-dp-rewrite-republish.php:1076
+#: includes/class-oli-dp-rewrite-republish.php:1101
 msgid "Republish"
 msgstr ""
 
@@ -144,12 +144,12 @@ msgid "When you click Republish, this copy will replace “%s” (same URL, same
 msgstr ""
 
 #: admin/class-oli-dp-meta-box.php:236
-#: includes/class-oli-dp-rewrite-republish.php:1102
+#: includes/class-oli-dp-rewrite-republish.php:1127
 msgid "Republish Schedule"
 msgstr ""
 
 #: admin/class-oli-dp-meta-box.php:237
-#: includes/class-oli-dp-rewrite-republish.php:1134
+#: includes/class-oli-dp-rewrite-republish.php:1159
 msgid "When you publish this post it replaces the original immediately. Scheduling keeps the original live until the scheduled time."
 msgstr ""
 
@@ -158,7 +158,7 @@ msgid "[Rewrite copy]"
 msgstr ""
 
 #: admin/class-oli-dp-post-list.php:56
-#: includes/class-oli-dp-comparison.php:113
+#: includes/class-oli-dp-comparison.php:117
 msgid "Original"
 msgstr ""
 
@@ -212,94 +212,95 @@ msgstr ""
 msgid "You do not have sufficient permissions to access this page."
 msgstr ""
 
-#: includes/class-oli-dp-comparison.php:61
-msgid "Invalid post IDs."
-msgstr ""
-
-#: includes/class-oli-dp-comparison.php:65
-#: includes/class-oli-dp-hooks.php:43
-#: includes/class-oli-dp-hooks.php:63
+#: includes/class-oli-dp-comparison.php:62
+#: includes/class-oli-dp-hooks.php:41
+#: includes/class-oli-dp-hooks.php:48
+#: includes/class-oli-dp-hooks.php:66
 msgid "Security check failed."
 msgstr ""
 
 #: includes/class-oli-dp-comparison.php:69
+msgid "Invalid post IDs."
+msgstr ""
+
+#: includes/class-oli-dp-comparison.php:73
 msgid "You do not have sufficient permissions to compare these posts."
 msgstr ""
 
-#: includes/class-oli-dp-comparison.php:76
+#: includes/class-oli-dp-comparison.php:80
 msgid "Posts not found."
 msgstr ""
 
-#: includes/class-oli-dp-comparison.php:81
+#: includes/class-oli-dp-comparison.php:85
 msgid "Invalid rewrite relationship."
 msgstr ""
 
-#: includes/class-oli-dp-comparison.php:86
+#: includes/class-oli-dp-comparison.php:90
 msgid "Compare Changes - Rewrite & Republish"
 msgstr ""
 
 #. translators: 1: original post title
-#: includes/class-oli-dp-comparison.php:93
+#: includes/class-oli-dp-comparison.php:97
 #, php-format
 msgid "Comparing your rewritten version with the original \"%s\". When you publish the rewrite, these changes will replace the original."
 msgstr ""
 
-#: includes/class-oli-dp-comparison.php:100
+#: includes/class-oli-dp-comparison.php:104
 msgid "Continue Editing"
 msgstr ""
 
-#: includes/class-oli-dp-comparison.php:103
+#: includes/class-oli-dp-comparison.php:107
 msgid "View Original"
 msgstr ""
 
-#: includes/class-oli-dp-comparison.php:112
+#: includes/class-oli-dp-comparison.php:116
 msgid "Field"
 msgstr ""
 
-#: includes/class-oli-dp-comparison.php:114
+#: includes/class-oli-dp-comparison.php:118
 msgid "Rewrite"
 msgstr ""
 
-#: includes/class-oli-dp-comparison.php:118
+#: includes/class-oli-dp-comparison.php:122
 #: includes/class-oli-dp-settings.php:160
 msgid "Title"
 msgstr ""
 
-#: includes/class-oli-dp-comparison.php:119
+#: includes/class-oli-dp-comparison.php:123
 #: includes/class-oli-dp-settings.php:162
 msgid "Status"
 msgstr ""
 
-#: includes/class-oli-dp-comparison.php:120
+#: includes/class-oli-dp-comparison.php:124
 #: includes/class-oli-dp-settings.php:161
 msgid "Date"
 msgstr ""
 
-#: includes/class-oli-dp-comparison.php:121
+#: includes/class-oli-dp-comparison.php:125
 #: includes/class-oli-dp-settings.php:164
 msgid "Excerpt"
 msgstr ""
 
-#: includes/class-oli-dp-comparison.php:122
+#: includes/class-oli-dp-comparison.php:126
 #: includes/class-oli-dp-settings.php:165
 msgid "Content"
 msgstr ""
 
-#: includes/class-oli-dp-comparison.php:128
-#: includes/class-oli-dp-comparison.php:129
+#: includes/class-oli-dp-comparison.php:132
+#: includes/class-oli-dp-comparison.php:133
 msgid "No image"
 msgstr ""
 
-#: includes/class-oli-dp-comparison.php:130
+#: includes/class-oli-dp-comparison.php:134
 #: includes/class-oli-dp-settings.php:166
 msgid "Featured Image"
 msgstr ""
 
-#: includes/class-oli-dp-comparison.php:155
+#: includes/class-oli-dp-comparison.php:159
 msgid "Continue Editing Rewrite"
 msgstr ""
 
-#: includes/class-oli-dp-comparison.php:158
+#: includes/class-oli-dp-comparison.php:162
 msgid "Back to List"
 msgstr ""
 
@@ -311,81 +312,81 @@ msgstr ""
 msgid "This post cannot be rewritten and republished."
 msgstr ""
 
-#: includes/class-oli-dp-hooks.php:56
+#: includes/class-oli-dp-hooks.php:61
 msgid "Invalid request."
 msgstr ""
 
-#: includes/class-oli-dp-hooks.php:93
+#: includes/class-oli-dp-hooks.php:98
 msgid "Invalid action."
 msgstr ""
 
-#: includes/class-oli-dp-hooks.php:161
+#: includes/class-oli-dp-hooks.php:173
 msgid "Post cloned successfully."
 msgstr ""
 
-#: includes/class-oli-dp-hooks.php:162
+#: includes/class-oli-dp-hooks.php:174
 msgid "New draft created successfully."
 msgstr ""
 
-#: includes/class-oli-dp-hooks.php:163
+#: includes/class-oli-dp-hooks.php:175
 msgid "Rewrite copy created successfully. Edit and publish to replace the original."
 msgstr ""
 
-#: includes/class-oli-dp-hooks.php:185
+#: includes/class-oli-dp-hooks.php:197
 msgid "Forbidden"
 msgstr ""
 
 #. translators: 1: Original post title, 2: Edit link, 3: View link, 4: Compare link
-#: includes/class-oli-dp-rewrite-republish.php:946
+#: includes/class-oli-dp-rewrite-republish.php:971
 #, php-format
 msgid "This is a <strong>Rewrite &amp; Republish</strong> copy of \"%1$s\". When you publish this post, it will replace the original. <a href=\"%2$s\">Edit original</a> | <a href=\"%3$s\" target=\"_blank\" rel=\"noopener noreferrer\">View original</a> | <a href=\"%4$s\">Compare changes</a>"
 msgstr ""
 
 #. translators: %s: post title
-#: includes/class-oli-dp-rewrite-republish.php:990
+#: includes/class-oli-dp-rewrite-republish.php:1015
 #, php-format
 msgid "Successfully republished \"%s\" with your changes."
 msgstr ""
 
 #. translators: %s: original post title as a link
 #. translators: %s: original post title
-#: includes/class-oli-dp-rewrite-republish.php:1019
-#: includes/class-oli-dp-rewrite-republish.php:1029
+#: includes/class-oli-dp-rewrite-republish.php:1044
+#: includes/class-oli-dp-rewrite-republish.php:1054
 #, php-format
 msgid "Rewrite of: %s"
 msgstr ""
 
 #. translators: %d: rewrite copy post ID
-#: includes/class-oli-dp-rewrite-republish.php:1040
+#: includes/class-oli-dp-rewrite-republish.php:1065
 #, php-format
 msgid "Rewrite in progress (draft #%d)"
 msgstr ""
 
-#: includes/class-oli-dp-rewrite-republish.php:1130
+#: includes/class-oli-dp-rewrite-republish.php:1155
 msgid "Original Post:"
 msgstr ""
 
-#: includes/class-oli-dp-rewrite-republish.php:1137
+#: includes/class-oli-dp-rewrite-republish.php:1162
 msgid "Actions:"
 msgstr ""
 
-#: includes/class-oli-dp-rewrite-republish.php:1140
+#: includes/class-oli-dp-rewrite-republish.php:1165
 msgid "Publish now: replace the original immediately."
 msgstr ""
 
-#: includes/class-oli-dp-rewrite-republish.php:1141
+#: includes/class-oli-dp-rewrite-republish.php:1166
 msgid "Schedule: replace the original at the scheduled time."
 msgstr ""
 
-#: includes/class-oli-dp-rewrite-republish.php:1142
+#: includes/class-oli-dp-rewrite-republish.php:1167
 msgid "Save draft: keep editing without publishing."
 msgstr ""
 
-#: includes/class-oli-dp-rewrite-republish.php:1168
+#: includes/class-oli-dp-rewrite-republish.php:1193
 msgid "Rewrite & Republish Mode"
 msgstr ""
 
-#: includes/class-oli-dp-rewrite-republish.php:1170
+#: includes/class-oli-dp-rewrite-republish.php:1195
 msgid "Publishing will replace the original post."
 msgstr ""
 

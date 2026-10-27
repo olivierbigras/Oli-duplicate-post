@@ -28,13 +28,13 @@ class Oli_DP_Comparison {
 	}
 
 	/**
-	 * Add comparison page (hidden from menu).
+	 * Add comparison page (hidden from menu, under options.php so core resolves its title).
 	 *
 	 * @since 1.0.0
 	 */
 	public static function add_comparison_page() {
 		add_submenu_page(
-			null,
+			'options.php',
 			__( 'Compare Changes', 'oli-duplicate-post' ),
 			__( 'Compare Changes', 'oli-duplicate-post' ),
 			'edit_posts',
@@ -53,16 +53,20 @@ class Oli_DP_Comparison {
 			wp_die( esc_html__( 'You do not have sufficient permissions to access this page.', 'oli-duplicate-post' ) );
 		}
 
-		$original_id = isset( $_GET['original'] ) ? absint( wp_unslash( $_GET['original'] ) ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$rewrite_id  = isset( $_GET['rewrite'] ) ? absint( wp_unslash( $_GET['rewrite'] ) ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$nonce       = isset( $_GET['_wpnonce'] ) ? sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		// The nonce is required and bound to both IDs, so the IDs are only trusted once it matches.
+		if ( ! isset( $_GET['_wpnonce'], $_GET['original'], $_GET['rewrite'] )
+			|| ! wp_verify_nonce(
+				sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ),
+				'oli_dp_compare_' . absint( wp_unslash( $_GET['original'] ) ) . '_' . absint( wp_unslash( $_GET['rewrite'] ) )
+			) ) {
+			wp_die( esc_html__( 'Security check failed.', 'oli-duplicate-post' ) );
+		}
+
+		$original_id = absint( wp_unslash( $_GET['original'] ) );
+		$rewrite_id  = absint( wp_unslash( $_GET['rewrite'] ) );
 
 		if ( ! $original_id || ! $rewrite_id ) {
 			wp_die( esc_html__( 'Invalid post IDs.', 'oli-duplicate-post' ) );
-		}
-
-		if ( $nonce && ! wp_verify_nonce( $nonce, 'oli_dp_compare_' . $original_id . '_' . $rewrite_id ) ) {
-			wp_die( esc_html__( 'Security check failed.', 'oli-duplicate-post' ) );
 		}
 
 		if ( ! current_user_can( 'edit_post', $original_id ) || ! current_user_can( 'edit_post', $rewrite_id ) ) {

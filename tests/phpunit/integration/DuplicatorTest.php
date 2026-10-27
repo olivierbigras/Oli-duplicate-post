@@ -77,7 +77,8 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 		$this->assertSame( 'Excerpt', $copy->post_excerpt );
 		$this->assertSame( 'keep-me', get_post_meta( $new_id, 'olidp_custom', true ) );
 		$this->assertSame( '', get_post_meta( $new_id, '_edit_lock', true ) );
-		$this->assertSame( (string) $original_id, get_post_meta( $new_id, '_dp_original', true ) );
+		$this->assertSame( (string) $original_id, get_post_meta( $new_id, '_oli_dp_source_post', true ) );
+		$this->assertSame( '', get_post_meta( $new_id, '_dp_original', true ) );
 		$this->assertContains( 'news', wp_get_object_terms( $new_id, 'category', array( 'fields' => 'slugs' ) ) );
 	}
 
@@ -108,7 +109,7 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 		$this->assertSame( 'draft', get_post_status( $rewrite_id ) );
 		$this->assertSame( 'Live Article', get_post( $rewrite_id )->post_title );
 		$this->assertSame( (string) $original_id, get_post_meta( $rewrite_id, '_oli_dp_original_post', true ) );
-		$this->assertSame( (string) $original_id, get_post_meta( $rewrite_id, '_dp_original', true ) );
+		$this->assertSame( (string) $original_id, get_post_meta( $rewrite_id, '_oli_dp_source_post', true ) );
 		$this->assertSame( (string) $rewrite_id, get_post_meta( $original_id, '_oli_dp_rewrite_copy', true ) );
 	}
 
@@ -279,13 +280,14 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 		$this->assertSame( 'New body', get_post( $original_id )->post_content );
 		$this->assertNotNull( get_post( $rewrite_id ) );
 
-		$_REQUEST['meta-box-loader'] = '1';
-		$_REQUEST['post']            = (string) $rewrite_id;
+		$_REQUEST['meta-box-loader']       = '1';
+		$_REQUEST['meta-box-loader-nonce'] = wp_create_nonce( 'meta-box-loader' );
+		$_REQUEST['post']                  = (string) $rewrite_id;
 		Oli_DP_Rewrite_Republish::queue_delete_after_metabox();
 		Oli_DP_Rewrite_Republish::delete_merged_copies();
 
 		$this->assertNull( get_post( $rewrite_id ) );
-		unset( $_REQUEST['meta-box-loader'], $_REQUEST['post'] );
+		unset( $_REQUEST['meta-box-loader'], $_REQUEST['meta-box-loader-nonce'], $_REQUEST['post'] );
 	}
 
 	public function test_rest_republish_defers_delete_and_schedules_cron() {
@@ -524,7 +526,7 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 			),
 			get_post_meta( $copy->ID, '_wp_attachment_metadata', true )
 		);
-		$this->assertSame( (string) $attachment_id, get_post_meta( $copy->ID, '_dp_original', true ) );
+		$this->assertSame( (string) $attachment_id, get_post_meta( $copy->ID, '_oli_dp_source_post', true ) );
 	}
 
 	public function test_admin_bar_only_resolves_single_edit_screens() {
@@ -540,13 +542,55 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 		$this->assertNull( $method->invoke( null ) );
 
 		set_current_screen( 'post' );
-		$pagenow = 'post.php';
-		$post    = $method->invoke( null );
+		$pagenow         = 'post.php';
+		$GLOBALS['post'] = get_post( $post_id );
+		$post            = $method->invoke( null );
 		$this->assertInstanceOf( WP_Post::class, $post );
 		$this->assertSame( $post_id, (int) $post->ID );
 
-		unset( $_GET['post'] );
+		unset( $_GET['post'], $GLOBALS['post'] );
 		set_current_screen( 'front' );
+	}
+
+	public function test_meta_box_loader_requires_core_nonce() {
+		$method = new ReflectionMethod( 'Oli_DP_Rewrite_Republish', 'is_meta_box_loader_request' );
+		$method->setAccessible( true );
+
+		$_REQUEST['meta-box-loader'] = '1';
+		$this->assertFalse( $method->invoke( null ) );
+
+		$_REQUEST['meta-box-loader-nonce'] = 'invalid';
+		$this->assertFalse( $method->invoke( null ) );
+
+		$_REQUEST['meta-box-loader-nonce'] = wp_create_nonce( 'meta-box-loader' );
+		$this->assertTrue( $method->invoke( null ) );
+
+		unset( $_REQUEST['meta-box-loader'], $_REQUEST['meta-box-loader-nonce'] );
+	}
+
+	public function test_source_meta_migration_is_idempotent_and_keeps_legacy_rows() {
+		$original_id = self::factory()->post->create();
+		$legacy_copy = self::factory()->post->create();
+		$both_keys   = self::factory()->post->create();
+
+		add_post_meta( $legacy_copy, '_dp_original', $original_id );
+		add_post_meta( $both_keys, '_dp_original', $original_id );
+		add_post_meta( $both_keys, '_oli_dp_source_post', 999 );
+
+		delete_option( 'oli_dp_db_version' );
+		Oli_DP_Utils::maybe_upgrade();
+
+		$this->assertSame( (string) $original_id, get_post_meta( $legacy_copy, '_oli_dp_source_post', true ) );
+		$this->assertSame( (string) $original_id, get_post_meta( $legacy_copy, '_dp_original', true ) );
+		$this->assertSame( '999', get_post_meta( $both_keys, '_oli_dp_source_post', true ) );
+		$this->assertSame( '1.0.10', get_option( 'oli_dp_db_version' ) );
+		$this->assertSame( $original_id, Oli_DP_Utils::get_original_post_id( $legacy_copy ) );
+
+		delete_option( 'oli_dp_db_version' );
+		$this->assertSame( 0, Oli_DP_Utils::migrate_source_meta() );
+		Oli_DP_Utils::maybe_upgrade();
+		$this->assertCount( 1, get_post_meta( $legacy_copy, '_oli_dp_source_post' ) );
+		$this->assertCount( 1, get_post_meta( $both_keys, '_oli_dp_source_post' ) );
 	}
 
 	public function test_merged_copy_is_hidden_and_cleaned_after_five_minutes() {
@@ -863,8 +907,9 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 		wp_publish_post( $rewrite_id );
 		$_SERVER['REQUEST_URI'] = $previous_uri;
 
-		$_REQUEST['meta-box-loader'] = '1';
-		$_REQUEST['post']            = (string) $rewrite_id;
+		$_REQUEST['meta-box-loader']       = '1';
+		$_REQUEST['meta-box-loader-nonce'] = wp_create_nonce( 'meta-box-loader' );
+		$_REQUEST['post']                  = (string) $rewrite_id;
 
 		$from = admin_url( 'post.php?post=' . $rewrite_id . '&action=edit&message=4' );
 		$to   = Oli_DP_Rewrite_Republish::redirect_after_merge( $from );
@@ -875,7 +920,7 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 		$this->assertSame( (string) $original_id, (string) $to_query['post'] );
 		$this->assertSame( '1', (string) $to_query['oli_dp_republished'] );
 
-		unset( $_REQUEST['meta-box-loader'], $_REQUEST['post'] );
+		unset( $_REQUEST['meta-box-loader'], $_REQUEST['meta-box-loader-nonce'], $_REQUEST['post'] );
 	}
 
 	public function test_row_actions_use_clarified_labels() {

@@ -152,12 +152,8 @@ class Oli_DP_Rewrite_Republish {
 			return;
 		}
 
-		if ( isset( $_POST['oli_dp_rewrite_nonce'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
-			$nonce = sanitize_text_field( wp_unslash( $_POST['oli_dp_rewrite_nonce'] ) );
-			if ( ! wp_verify_nonce( $nonce, 'oli_dp_rewrite_publish' ) ) {
-				return;
-			}
-		}
+		// No request input is read here: the save itself is authenticated by core (post.php nonce or REST
+		// cookie nonce), and the merge is authorized above with current_user_can() on both posts.
 
 		self::$pending_merges[ (int) $post->ID ] = $original_post_id;
 	}
@@ -301,12 +297,7 @@ class Oli_DP_Rewrite_Republish {
 			return;
 		}
 
-		$post_id = 0;
-		if ( isset( $_REQUEST['post'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			$post_id = absint( wp_unslash( $_REQUEST['post'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		} elseif ( isset( $_REQUEST['post_ID'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			$post_id = absint( wp_unslash( $_REQUEST['post_ID'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		}
+		$post_id = self::get_meta_box_loader_post_id();
 
 		if ( ! $post_id || ! get_post_meta( $post_id, '_oli_dp_pending_delete', true ) ) {
 			return;
@@ -480,8 +471,10 @@ class Oli_DP_Rewrite_Republish {
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$ids = $wpdb->get_col(
 			$wpdb->prepare(
-				"SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = %s LIMIT 100",
-				'_oli_dp_pending_delete'
+				'SELECT post_id FROM %i WHERE meta_key = %s LIMIT %d',
+				$wpdb->postmeta,
+				'_oli_dp_pending_delete',
+				100
 			)
 		);
 
@@ -655,7 +648,39 @@ class Oli_DP_Rewrite_Republish {
 	 * @return bool
 	 */
 	private static function is_meta_box_loader_request() {
-		return isset( $_REQUEST['meta-box-loader'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		if ( ! isset( $_REQUEST['meta-box-loader'], $_REQUEST['meta-box-loader-nonce'] ) ) {
+			return false;
+		}
+
+		// Core adds this nonce to every block editor meta-box save (edit-form-blocks.php).
+		return false !== wp_verify_nonce( sanitize_text_field( wp_unslash( $_REQUEST['meta-box-loader-nonce'] ) ), 'meta-box-loader' );
+	}
+
+	/**
+	 * Post ID of a verified Gutenberg meta-box-loader request the user can edit.
+	 *
+	 * @since 1.0.10
+	 *
+	 * @return int
+	 */
+	private static function get_meta_box_loader_post_id() {
+		if ( ! isset( $_REQUEST['meta-box-loader-nonce'] )
+			|| ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_REQUEST['meta-box-loader-nonce'] ) ), 'meta-box-loader' ) ) {
+			return 0;
+		}
+
+		$post_id = 0;
+		if ( isset( $_REQUEST['post'] ) ) {
+			$post_id = absint( wp_unslash( $_REQUEST['post'] ) );
+		} elseif ( isset( $_REQUEST['post_ID'] ) ) {
+			$post_id = absint( wp_unslash( $_REQUEST['post_ID'] ) );
+		}
+
+		if ( ! $post_id || ! current_user_can( 'edit_post', $post_id ) ) {
+			return 0;
+		}
+
+		return $post_id;
 	}
 
 	/**
@@ -940,23 +965,23 @@ class Oli_DP_Rewrite_Republish {
 		<div class="notice notice-info">
 			<p>
 				<?php
-				printf(
-					wp_kses(
+				echo wp_kses(
+					sprintf(
 						/* translators: 1: Original post title, 2: Edit link, 3: View link, 4: Compare link */
 						__( 'This is a <strong>Rewrite &amp; Republish</strong> copy of "%1$s". When you publish this post, it will replace the original. <a href="%2$s">Edit original</a> | <a href="%3$s" target="_blank" rel="noopener noreferrer">View original</a> | <a href="%4$s">Compare changes</a>', 'oli-duplicate-post' ),
-						array(
-							'strong' => array(),
-							'a'      => array(
-								'href'   => array(),
-								'target' => array(),
-								'rel'    => array(),
-							),
-						)
+						esc_html( $original_post->post_title ),
+						esc_url( $edit_link ),
+						esc_url( $view_link ),
+						esc_url( $compare_link )
 					),
-					esc_html( $original_post->post_title ),
-					esc_url( $edit_link ),
-					esc_url( $view_link ),
-					esc_url( $compare_link )
+					array(
+						'strong' => array(),
+						'a'      => array(
+							'href'   => array(),
+							'target' => array(),
+							'rel'    => array(),
+						),
+					)
 				);
 				?>
 			</p>
@@ -1169,7 +1194,6 @@ class Oli_DP_Rewrite_Republish {
 			<p class="description oli-dp-republish-note">
 				<?php esc_html_e( 'Publishing will replace the original post.', 'oli-duplicate-post' ); ?>
 			</p>
-			<?php wp_nonce_field( 'oli_dp_rewrite_publish', 'oli_dp_rewrite_nonce' ); ?>
 		</div>
 		<?php
 	}
@@ -1242,11 +1266,15 @@ class Oli_DP_Rewrite_Republish {
 	 * @return int
 	 */
 	private static function get_requested_post_id() {
-		if ( isset( $_GET['post'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			return absint( wp_unslash( $_GET['post'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		// Only the single edit screen has a current post; post.php sets it, so no request input is read.
+		if ( is_admin() ) {
+			$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+			if ( ! $screen || 'post' !== $screen->base ) {
+				return 0;
+			}
 		}
 
-		global $post;
+		$post = get_post();
 		if ( $post instanceof WP_Post ) {
 			return (int) $post->ID;
 		}
@@ -1347,12 +1375,7 @@ class Oli_DP_Rewrite_Republish {
 	 * @return int
 	 */
 	private static function get_pending_delete_original_id() {
-		$post_id = 0;
-		if ( isset( $_REQUEST['post'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			$post_id = absint( wp_unslash( $_REQUEST['post'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		} elseif ( isset( $_REQUEST['post_ID'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			$post_id = absint( wp_unslash( $_REQUEST['post_ID'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		}
+		$post_id = self::get_meta_box_loader_post_id();
 
 		if ( ! $post_id || ! self::is_pending_delete_copy( $post_id ) ) {
 			return 0;

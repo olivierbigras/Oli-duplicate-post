@@ -126,11 +126,8 @@ class Oli_DP_Admin_Bar {
 				return null;
 			}
 
-			if ( ! isset( $_GET['post'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-				return null;
-			}
-
-			$post = get_post( absint( wp_unslash( $_GET['post'] ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			// post.php sets the global post before the admin bar renders, so no request input is read.
+			$post = get_post();
 			return $post instanceof WP_Post ? $post : null;
 		}
 

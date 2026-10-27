@@ -79,20 +79,20 @@ class Oli_DP_Meta_Box {
 				<p class="description">
 					<?php
 					if ( $original_edit ) {
-						printf(
-							wp_kses(
+						echo wp_kses(
+							sprintf(
 								/* translators: %s: original post title as a link */
 								__( 'Original: %s', 'oli-duplicate-post' ),
-								array(
-									'a' => array(
-										'href' => array(),
-									),
+								sprintf(
+									'<a href="%s">%s</a>',
+									esc_url( $original_edit ),
+									esc_html( $original->post_title )
 								)
 							),
-							sprintf(
-								'<a href="%s">%s</a>',
-								esc_url( $original_edit ),
-								esc_html( $original->post_title )
+							array(
+								'a' => array(
+									'href' => array(),
+								),
 							)
 						);
 					} else {

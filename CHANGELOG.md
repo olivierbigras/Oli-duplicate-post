@@ -5,6 +5,22 @@ All notable changes to Oli Duplicate Post will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.10] - 2026-10-27
+
+### Security
+- Duplication, comparaison et avis : le nonce est vérifié avant toute autre lecture de la requête ; l'écran de comparaison exige désormais toujours son nonce
+- La requête de suivi des méta-boîtes Gutenberg n'est reconnue qu'avec le nonce core meta-box-loader et un contrôle current_user_can
+- Barre d'admin et éditeur : le post courant est utilisé au lieu de lire l'URL
+- Avis contenant des liens échappés en bloc avec wp_kses()
+- Requêtes SQL : noms de tables passés en placeholders %i dans $wpdb->prepare()
+
+### Changed
+- Les copies enregistrent leur source dans la méta préfixée `_oli_dp_source_post` ; migration unique et idempotente des valeurs `_dp_original` existantes à la mise à jour (les lignes `_dp_original` sont conservées, car Yoast Duplicate Post utilise la même clé)
+- La désinstallation supprime aussi `_oli_dp_source_post` et l'option `oli_dp_db_version`
+
+### Fixed
+- Avis PHP Deprecated (strip_tags null) sur l'écran caché de comparaison : la page est rattachée à options.php pour que WordPress résolve son titre
+
 ## [1.0.9] - 2026-10-26
 
 ### Fixed

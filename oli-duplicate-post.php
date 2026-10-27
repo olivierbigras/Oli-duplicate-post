@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Oli Duplicate Post
  * Description: Clone posts, pages, and custom post types with Clone, New Draft, and Rewrite & Republish.
- * Version: 1.0.9
+ * Version: 1.0.10
  * Requires at least: 6.5
  * Requires PHP: 7.4
  * Author: Olivier Bigras
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'OLI_DP_VERSION', '1.0.9' );
+define( 'OLI_DP_VERSION', '1.0.10' );
 define( 'OLI_DP_PLUGIN_FILE', __FILE__ );
 define( 'OLI_DP_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'OLI_DP_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -49,6 +49,7 @@ require_once OLI_DP_PLUGIN_DIR . 'admin/class-oli-dp-meta-box.php';
  * @since 1.0.0
  */
 function oli_dp_init() {
+	Oli_DP_Utils::maybe_upgrade();
 	Oli_DP_Permissions::init();
 	Oli_DP_Settings::init();
 	Oli_DP_Hooks::init();
@@ -86,5 +87,7 @@ function oli_dp_activate() {
 	if ( false === get_option( 'oli_dp_settings' ) ) {
 		update_option( 'oli_dp_settings', Oli_DP_Settings::get_default_settings() );
 	}
+
+	Oli_DP_Utils::maybe_upgrade();
 }
 register_activation_hook( __FILE__, 'oli_dp_activate' );

@@ -100,7 +100,7 @@ class Oli_DP_Duplicator {
 			self::copy_comments( $post_id, $new_post_id );
 		}
 
-		update_post_meta( $new_post_id, '_dp_original', $post_id );
+		update_post_meta( $new_post_id, Oli_DP_Utils::SOURCE_META_KEY, $post_id );
 
 		if ( 'rewrite_republish' === $mode ) {
 			update_post_meta( $new_post_id, '_oli_dp_original_post', $post_id );
@@ -418,7 +418,7 @@ class Oli_DP_Duplicator {
 				update_post_meta( $new_attachment_id, '_wp_attached_file', $file );
 			}
 
-			update_post_meta( $new_attachment_id, '_dp_original', $attachment->ID );
+			update_post_meta( $new_attachment_id, Oli_DP_Utils::SOURCE_META_KEY, $attachment->ID );
 		}
 	}
 

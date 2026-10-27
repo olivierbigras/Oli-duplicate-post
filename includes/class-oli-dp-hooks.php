@@ -35,11 +35,16 @@ class Oli_DP_Hooks {
 	 * @since 1.0.0
 	 */
 	public static function handle_duplicate_request() {
-		$post_id = isset( $_GET['post'] ) ? absint( wp_unslash( $_GET['post'] ) ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$action  = isset( $_GET['oli_dp_action'] ) ? sanitize_key( wp_unslash( $_GET['oli_dp_action'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$nonce   = isset( $_GET['_wpnonce'] ) ? sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		// The nonce is bound to the post ID, so the ID is only trusted once the nonce matches it.
+		if ( ! isset( $_GET['_wpnonce'], $_GET['post'] )
+			|| ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ), 'oli_dp_duplicate_' . absint( wp_unslash( $_GET['post'] ) ) ) ) {
+			self::forbid( __( 'Security check failed.', 'oli-duplicate-post' ) );
+		}
 
-		if ( ! $post_id || ! wp_verify_nonce( $nonce, 'oli_dp_duplicate_' . $post_id ) ) {
+		$post_id = absint( wp_unslash( $_GET['post'] ) );
+		$action  = isset( $_GET['oli_dp_action'] ) ? sanitize_key( wp_unslash( $_GET['oli_dp_action'] ) ) : '';
+
+		if ( ! $post_id ) {
 			self::forbid( __( 'Security check failed.', 'oli-duplicate-post' ) );
 		}
 
@@ -52,16 +57,16 @@ class Oli_DP_Hooks {
 	 * @since 1.0.0
 	 */
 	public static function handle_duplicate_action() {
-		if ( ! isset( $_POST['post_id'] ) || ! isset( $_POST['oli_dp_nonce'] ) ) {
+		if ( ! isset( $_POST['post_id'], $_POST['oli_dp_nonce'] ) ) {
 			self::forbid( __( 'Invalid request.', 'oli-duplicate-post' ) );
 		}
 
-		$post_id = absint( wp_unslash( $_POST['post_id'] ) );
-		$nonce   = sanitize_text_field( wp_unslash( $_POST['oli_dp_nonce'] ) );
-
-		if ( ! wp_verify_nonce( $nonce, 'oli_dp_duplicate_' . $post_id ) ) {
+		// The nonce is bound to the post ID, so the ID is only trusted once the nonce matches it.
+		if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['oli_dp_nonce'] ) ), 'oli_dp_duplicate_' . absint( wp_unslash( $_POST['post_id'] ) ) ) ) {
 			self::forbid( __( 'Security check failed.', 'oli-duplicate-post' ) );
 		}
+
+		$post_id = absint( wp_unslash( $_POST['post_id'] ) );
 
 		$mode = isset( $_POST['mode'] ) ? sanitize_key( wp_unslash( $_POST['mode'] ) ) : 'clone';
 		self::process_duplicate( $post_id, $mode );
@@ -124,9 +129,10 @@ class Oli_DP_Hooks {
 
 			return add_query_arg(
 				array(
-					'oli_dp_duplicated' => 1,
-					'oli_dp_mode'       => $mode,
-					'oli_dp_new'        => $new_post_id,
+					'oli_dp_duplicated'   => 1,
+					'oli_dp_mode'         => $mode,
+					'oli_dp_new'          => $new_post_id,
+					'oli_dp_notice_nonce' => wp_create_nonce( 'oli_dp_notice' ),
 				),
 				$list
 			);
@@ -134,8 +140,9 @@ class Oli_DP_Hooks {
 
 		return add_query_arg(
 			array(
-				'oli_dp_duplicated' => 1,
-				'oli_dp_mode'       => $mode,
+				'oli_dp_duplicated'   => 1,
+				'oli_dp_mode'         => $mode,
+				'oli_dp_notice_nonce' => wp_create_nonce( 'oli_dp_notice' ),
 			),
 			get_edit_post_link( $new_post_id, 'raw' )
 		);
@@ -147,7 +154,12 @@ class Oli_DP_Hooks {
 	 * @since 1.0.0
 	 */
 	public static function show_success_notice() {
-		if ( ! isset( $_GET['oli_dp_duplicated'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		if ( ! isset( $_GET['oli_dp_notice_nonce'] )
+			|| ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_GET['oli_dp_notice_nonce'] ) ), 'oli_dp_notice' ) ) {
+			return;
+		}
+
+		if ( ! isset( $_GET['oli_dp_duplicated'] ) || ! current_user_can( 'edit_posts' ) ) {
 			return;
 		}
 
@@ -155,7 +167,7 @@ class Oli_DP_Hooks {
 			return;
 		}
 
-		$mode = isset( $_GET['oli_dp_mode'] ) ? sanitize_key( wp_unslash( $_GET['oli_dp_mode'] ) ) : 'clone'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$mode = isset( $_GET['oli_dp_mode'] ) ? sanitize_key( wp_unslash( $_GET['oli_dp_mode'] ) ) : 'clone';
 
 		$messages = array(
 			'clone'             => __( 'Post cloned successfully.', 'oli-duplicate-post' ),
