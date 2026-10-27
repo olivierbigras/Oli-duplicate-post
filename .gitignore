@@ -41,6 +41,7 @@ composer.phar
 # Build files
 dist/
 build/
+plugin-export/
 
 # Testing
 phpunit.xml

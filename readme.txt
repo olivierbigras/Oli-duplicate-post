@@ -4,65 +4,62 @@ Tags: duplicate, clone, copy, post, page
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.1.2
+Stable tag: 1.0.10
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Clone posts, pages, and custom post types with Clone, New Draft, and Rewrite & Republish features.
+Clone posts, pages, and custom post types with Clone, New Draft, and Rewrite & Republish.
 
 == Description ==
 
-Oli Duplicate Post makes it easy to duplicate posts, pages, and custom post types in WordPress. With three different duplication modes and extensive customization options, you have complete control over how your content is duplicated.
+Oli Duplicate Post duplicates posts, pages, and custom post types. Use Clone for a same-list copy, New Draft to open an editable draft, or Rewrite & Republish to edit a copy and merge it back into the live original.
+
+Author: Olivier Bigras
+Author URI: https://github.com/olivierbigras
+Contact: oli@olivierbigras.com
 
 = Features =
 
-* **Three Duplication Modes:**
-  * **Clone** - Create an exact copy with all settings
-  * **New Draft** - Create a draft copy for further editing
-  * **Rewrite & Republish** - Edit a copy of a published post and merge it back on publish
+* **Three duplication modes**
+  * **Clone** — create a copy and stay on the list table
+  * **New Draft** — create a draft and open it for editing
+  * **Rewrite & Republish** — edit a copy of a published post and merge it back on publish, including scheduled republish
 
-* **Multiple Access Points:**
-  * Row actions in post list
-  * Bulk actions for multiple posts
-  * Admin bar menu
-  * Edit screen meta box
-  * Block editor and classic editor support
+* **Access points**
+  * Row actions in the post list
+  * Bulk Clone, New Draft, and Rewrite & Republish
+  * Admin bar (admin and front-end singular views)
+  * Classic editor meta box
+  * Block editor sidebar panel and Options menu
 
-* **Comprehensive Copying Options:**
-  * Title (with customizable prefix/suffix)
-  * Content, excerpt, and featured image
-  * Meta fields and taxonomies
-  * Post format and template
-  * Author, date, status, and slug
-  * Attachments and child posts (optional)
-  * Comments (optional)
-  * Full WooCommerce product support
+* **What you can copy**
+  * Title (with prefix and suffix), date, status, slug, excerpt, content
+  * Featured image, template, format, author, password, menu order
+  * Attachments, child posts, and comments
+  * Post meta and taxonomies, with exclusion lists
 
-* **Advanced Settings:**
-  * Choose what to copy for each duplication
-  * Exclude specific meta fields (with wildcard support)
-  * Exclude specific taxonomies
-  * Enable/disable for specific post types
-  * Restrict access by user role
-  * Customize UI locations
+* **Permissions**
+  * Enable specific post types
+  * Restrict duplication to selected user roles
 
-* **Developer Friendly:**
+* **WooCommerce**
+  * Products can be enabled like any other post type
+  * Sales and rating stats are not copied
+  * SKUs are made unique
+  * Variations are copied as published children, then the parent is synced
+
+* **Developer API**
   * Template tag: `oli_dp_duplicate_post()`
-  * Extensive hooks and filters
-  * Well-documented code
+  * Actions and filters for titles, meta, taxonomies, permissions, and merge data
 
 = Rewrite & Republish =
 
-The Rewrite & Republish feature lets you create a copy of a published post, make changes to it, and then replace the original when you're ready. This is perfect for major updates to live content without taking the original post offline.
+1. Click **Rewrite & Republish** on a published post.
+2. Edit the working copy. The original stays live.
+3. Publish the copy to replace the original immediately, or schedule it. The original permalink and publish date are kept.
+4. The working copy is then removed.
 
-1. Click "Rewrite & Republish" on a published post
-2. Edit the copy as needed
-3. When you publish the copy, it automatically replaces the original
-4. The copy is deleted, and the original is updated with your changes
-
-= Template Tag =
-
-Use the template tag in your theme or plugin:
+= Template tag =
 
 `
 <?php
@@ -71,120 +68,198 @@ $new_post_id = oli_dp_duplicate_post( $post_id, 'clone' );
 `
 
 Parameters:
-* `$post_id` (int) - The post ID to duplicate
-* `$mode` (string) - 'clone', 'new_draft', or 'rewrite_republish'
-* `$args` (array) - Optional settings override
 
-= Hooks & Filters =
+* `$post_id` (int) — post to duplicate
+* `$mode` (string) — `clone`, `new_draft`, or `rewrite_republish`
+* `$args` (array) — optional settings override
 
-**Actions:**
-* `oli_dp_post_duplicated` - After a post is duplicated
-* `oli_dp_rewrite_republish_merged` - After a rewrite copy is merged
+= Hooks =
 
-**Filters:**
-* `oli_dp_pre_duplicate_post_data` - Modify post data before duplication
+**Actions**
+
+* `oli_dp_before_duplicate`
+* `oli_dp_post_duplicated`
+* `oli_dp_after_copy_meta`
+* `oli_dp_after_copy_taxonomies`
+* `oli_dp_before_rewrite_merge`
+* `oli_dp_rewrite_republish_merged`
+
+**Filters**
+
+* `oli_dp_pre_duplicate_post_data`
+* `oli_dp_duplicate_title`
+* `oli_dp_excluded_meta_keys`
+* `oli_dp_excluded_taxonomies`
+* `oli_dp_copied_meta_value`
+* `oli_dp_can_duplicate`
+* `oli_dp_enabled_post_types`
+* `oli_dp_allowed_roles`
+* `oli_dp_rewrite_merge_post_data`
+* `oli_dp_woocommerce_unique_sku`
 
 == Installation ==
 
-1. Upload the `oli-duplicate-post` folder to `/wp-content/plugins/`
-2. Activate the plugin through the 'Plugins' menu in WordPress
-3. Go to Settings > Duplicate Post to configure options
-4. Start duplicating posts from the post list or edit screen
+1. Upload the `oli-duplicate-post` folder to the `/wp-content/plugins/` directory.
+2. Activate the plugin through the Plugins screen.
+3. Open Settings → Duplicate Post to choose what to copy, which roles are allowed, and which post types are enabled.
+4. Duplicate items from the list table, admin bar, classic editor, or block editor.
 
 == Frequently Asked Questions ==
 
 = Does this work with custom post types? =
 
-Yes! You can enable duplication for any custom post type, including WooCommerce products, in the plugin settings.
+Yes. Enable any public post type, including products, on the settings screen.
 
 = Does it work with the block editor? =
 
-Yes! The plugin works with both the block editor (Gutenberg) and the classic editor.
+Yes. The plugin adds a sidebar panel and Options menu items in the block editor, and a meta box in the classic editor.
 
-= Can I exclude certain meta fields from being copied? =
+= Can I exclude meta fields or taxonomies? =
 
-Yes! In the settings, you can specify meta field keys to exclude. Wildcard patterns are supported (e.g., `_yoast_*` to exclude all Yoast meta fields).
+Yes. Settings accept comma-separated meta keys (wildcards such as `_private_*` are supported) and taxonomy names.
 
-= What's the difference between Clone and New Draft? =
+= What is the difference between Clone and New Draft? =
 
-Clone creates a copy with the same status and settings as the original. New Draft always creates a draft post regardless of the original's status.
+Clone creates a copy and returns you to the list table. New Draft always creates a draft and opens it in the editor.
 
-= Is this compatible with WooCommerce? =
+= How does Rewrite & Republish scheduling work? =
 
-Yes! The plugin fully supports WooCommerce products, including all product meta, attributes, and taxonomies.
+Scheduling the working copy leaves the original live. The merge runs only when that copy actually publishes.
 
-= Can I restrict duplication to certain user roles? =
+= Can I restrict who can duplicate? =
 
-Yes! In the settings, you can choose which user roles are allowed to duplicate posts.
+Yes. Choose the allowed roles and post types on the settings screen.
 
-= Does this copy all post relationships? =
+= How do I get support? =
 
-The plugin copies meta fields, taxonomies, featured images, and optionally attachments and child posts. Some complex plugin-specific relationships may require custom code using the provided filters.
+Email oli@olivierbigras.com or open an issue at https://github.com/olivierbigras/Oli-duplicate-post
 
 == Screenshots ==
 
-1. Row actions in post list
-2. Bulk actions for multiple posts
-3. Admin bar menu
-4. Edit screen meta box
-5. Settings page - What to copy
-6. Settings page - Post types & permissions
-7. Rewrite & Republish notice
+1. Settings screen, part 1: choose which elements are copied when duplicating a post.
+2. Posts list with Duplicate now, Duplicate and edit, and Rewrite and republish row actions.
+3. Compare Changes screen showing the rewritten version side by side with the original.
+4. Settings screen, part 2: title prefix and suffix, excluded meta and taxonomies, post types, roles and UI locations.
 
 == External services ==
 
-This plugin does not call any external service. Clone, New Draft, and Rewrite & Republish run entirely on your WordPress site. No visitor or editor data is sent to olivierbigras.com, PayPal, Google, Cloudflare Turnstile, Carto, Leaflet, Google Sheets, Google Fonts, Adobe Typekit, or any other third party.
+This plugin does not call any external service. Clone, New Draft, and Rewrite & Republish run entirely on your site. No visitor or editor data is sent to a third party.
 
 == Changelog ==
 
-= 0.1.2 - 2026-10-21 =
-* Moved block editor and Quick Edit JavaScript from inline scripts into enqueued files
-* Moved admin CSS from inline styles into an enqueued stylesheet
-* Localized editor URLs and labels with wp_localize_script
-* Escaped comparison featured-image HTML with wp_kses_post
-* Added current_user_can checks on comparison and duplicate admin actions
+= 1.0.10 - 2026-10-27 =
+* Security: duplicate, compare and notice requests verify a nonce before any other request value is read; the compare screen now always requires its nonce.
+* Security: the Gutenberg meta-box follow-up request is recognized only with the core meta-box-loader nonce and an edit capability check.
+* Security: the admin bar and editor helpers use the current post instead of reading the URL.
+* Copies now store their source in the prefixed `_oli_dp_source_post` meta. Existing `_dp_original` values are copied once on update and left in place.
+* Database queries use $wpdb->prepare() placeholders for table names (%i).
+* Notices with links are escaped as a whole with wp_kses().
+* Fixed a PHP deprecation notice (strip_tags null) on the hidden Compare Changes screen.
 
-= 0.1.1 - 2026-10-19 =
-* Added side-by-side comparison screen for Rewrite & Republish
-* Added "Compare changes" link in rewrite notice
-* Added block editor toolbar menu items (Options menu)
-* Enhanced block editor with sidebar panel and toolbar access
-* Added quick edit integration with "Copy to new draft" button
-* Added scheduled republish UI with meta box and publish box warnings
-* Added success notices after duplication actions (dismissible)
-* Added success notice after successful republish
-* Improved admin notices throughout the plugin
-* Improved block editor integration
-* Fixed PHPCS compliance issues
-* Fixed PHP syntax validation
+= 1.0.9 - 2026-10-26 =
+* Uninstall now clears the scheduled Rewrite & Republish cleanup events.
 
-= 0.1.0 - 2026-10-19 =
+= 1.0.8 - 2026-10-26 =
+* Regenerated translation template (POT).
+
+= 1.0.7 =
+* Readme: added Screenshots section.
+
+= 1.0.6 =
+* Merged rewrite copies stay draft for any non-draft status (private, pending, publish, future), including REST
+* Admin cleanup skips the postmeta query when the pending-delete cache is empty
+* Gutenberg meta-box-loader redirects to the original after Rewrite & Republish instead of the deleted copy
+
+= 1.0.5 =
+* Merged rewrite copies cannot be published again (REST, editor, or status transition) while `_oli_dp_pending_delete` is set
+* Pending-delete copy IDs are cached in a transient and refreshed when a copy is marked or deleted
+* `pre_get_posts` exclusion applies only to front-end, REST, and sitemap queries
+
+= 1.0.4 =
+* Merged rewrite copies are hidden immediately, excluded from queries and sitemaps, and cleaned up after 5 minutes even when WP-Cron is disabled
+* Block editor shows a persistent rewrite notice, a pre-publish overwrite warning, and a Republish button
+* Posts list marks rewrite copies as “Rewrite of: title”
+* Row actions, settings labels, and admin-bar tooltips are clearer
+
+= 1.0.3 =
+* Gutenberg Rewrite & Republish no longer 500s: the copy is deleted after the meta-box-loader request or 60 seconds later
+* Cancelling a schedule and publishing now clears `_oli_dp_scheduled_gmt` so the copy merges
+
+= 1.0.2 =
+* Rewrite & Republish merges after save and deletes the copy after the REST/editor/cron response
+* Variation copies keep their original status
+* WooCommerce lookup rows are written through the product CRUD API
+* Uninstall no longer deletes shared `_dp_original` meta
+* Scheduled republish compares GMT timestamps so a +60s schedule is not merged early
+
+= 1.0.1 =
+* Product variations are published and synced so the copy can be purchased
+* Title prefix and suffix keep leading and trailing spaces
+* Attachment copies are real attachments that share the original file
+* Invalid duplicate URLs return HTTP 403
+* Admin bar Duplicate This is limited to single edit screens and singular views
+* Rewrite & Republish permanently deletes the working copy
+* Copies store `_dp_original` and link back to the original
+* Bulk actions include Rewrite & Republish
+* Products are not enabled by default
+
+= 1.0.0 =
+* WordPress.org-ready release: no load_plugin_textdomain(), GPLv2 or later, unique oli_dp_ prefix
+* Featured image is now a copy setting
+* Meta is copied independently of content
+* Rewrite & Republish waits until publish for scheduled copies
+* Clone returns to the list table; New Draft opens the editor
+* WooCommerce products get unique SKUs, no sales stats, and copied variations
+* Admin notices stay on plugin-related screens
+* Developer hooks for meta, taxonomies, permissions, and merge data
+* PHPUnit unit and integration tests plus wp-env config
+* Plugin Check and PHPCS WordPress-Extra in CI
+
+= 0.1.2 =
+* Moved block editor and Quick Edit JavaScript into enqueued files
+* Moved admin CSS into an enqueued stylesheet
+
+= 0.1.1 =
+* Comparison screen, block editor menu items, Quick Edit, scheduled republish UI
+
+= 0.1.0 =
 * Initial release
-* Clone posts, pages, and custom post types
-* Three duplication modes: Clone, New Draft, Rewrite & Republish
-* Comprehensive settings page
-* Multiple UI entry points
-* Full WooCommerce support
-* Developer hooks and filters
-* Block editor support
 
 == Upgrade Notice ==
 
-= 0.1.2 =
-Moves remaining inline JavaScript and CSS into enqueued files for WordPress.org Plugin Check.
+= 1.0.10 =
+Security hardening. Source links of existing copies are migrated automatically to a prefixed meta key.
 
-= 0.1.1 =
-Adds comparison screen, enhanced block editor integration, quick edit support, and improved admin notices.
+= 1.0.9 =
+Uninstall now clears the scheduled Rewrite & Republish cleanup events.
 
-= 0.1.0 =
-Initial release of Oli Duplicate Post.
+= 1.0.8 =
+Regenerated translation template (POT).
 
-== Privacy Policy ==
+= 1.0.7 =
+Readme: added Screenshots section.
 
-Oli Duplicate Post does not collect, store, or transmit any user data. All duplication operations happen locally on your WordPress installation.
+= 1.0.6 =
+Keeps already-merged rewrite copies as draft, skips empty admin cleanup queries, and sends the block-editor meta-box save back to the original.
 
-== Development ==
+= 1.0.5 =
+Stops republishing already-merged rewrite copies, caches pending-delete IDs, and limits query exclusion to the public site, REST, and sitemaps.
 
-Development happens on GitHub: https://github.com/olivierbigras/Oli-duplicate-post
+= 1.0.4 =
+Hides merged rewrite copies immediately, adds block-editor rewrite notices, and marks copies in the posts list.
 
-Contributions are welcome!
+= 1.0.3 =
+Fixes the Gutenberg 500 after Rewrite & Republish and merging after a cancelled schedule.
+
+= 1.0.2 =
+Fixes REST/editor republish notices, preserves private variation status, writes WooCommerce lookup rows, and leaves Yoast `_dp_original` meta on uninstall.
+
+= 1.0.1 =
+Fixes purchasable variable-product copies, title spacing, attachment copies, 403s on forged URLs, and admin-bar list-screen links.
+
+= 1.0.0 =
+Adds featured-image settings, scheduled Rewrite & Republish, WooCommerce handling, and WordPress.org compliance fixes.
+
+== Privacy ==
+
+Oli Duplicate Post does not collect, store, or transmit personal data. Duplication stays on your site.

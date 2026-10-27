@@ -3,6 +3,7 @@
  * Rewrite & Republish functionality.
  *
  * @package Oli_Duplicate_Post
+ * @since 1.0.0
  */
 
 // Exit if accessed directly.
@@ -11,38 +12,139 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Class Oli_DP_Rewrite_Republish
+ * Creates a working copy and merges it back into the original on publish.
+ *
+ * Scheduled copies stay as `future` until the scheduled time; only a
+ * transition to `publish` merges the copy back.
+ *
+ * @since 1.0.0
  */
 class Oli_DP_Rewrite_Republish {
 
 	/**
+	 * Whether a merge is already running.
+	 *
+	 * @since 1.0.0
+	 * @var bool
+	 */
+	private static $merging = false;
+
+	/**
+	 * Original post to redirect to after a classic-editor publish.
+	 *
+	 * @since 1.0.0
+	 * @var int
+	 */
+	private static $redirect_original_id = 0;
+
+	/**
+	 * Rewrite copies waiting for wp_after_insert_post before merge.
+	 *
+	 * @since 1.0.2
+	 * @var array<int, int>
+	 */
+	private static $pending_merges = array();
+
+	/**
+	 * Rewrite copies to delete after the save response is finished.
+	 *
+	 * @since 1.0.2
+	 * @var int[]
+	 */
+	private static $pending_deletes = array();
+
+	/**
+	 * Cached IDs of merged copies waiting to be deleted.
+	 *
+	 * @since 1.0.4
+	 * @var int[]|null
+	 */
+	private static $pending_delete_ids = null;
+
+	/**
+	 * Transient key for pending-delete copy IDs.
+	 *
+	 * @since 1.0.5
+	 * @var string
+	 */
+	const PENDING_DELETE_IDS_TRANSIENT = 'oli_dp_pending_delete_ids';
+
+	/**
 	 * Initialize the class.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function init() {
 		add_action( 'transition_post_status', array( __CLASS__, 'handle_publish' ), 10, 3 );
+		add_filter( 'wp_insert_post_data', array( __CLASS__, 'prevent_pending_delete_publish' ), 10, 2 );
+		add_action( 'rest_api_init', array( __CLASS__, 'register_rest_guards' ) );
+		add_action( 'wp_after_insert_post', array( __CLASS__, 'merge_after_save' ), 20, 3 );
+		add_filter( 'rest_post_dispatch', array( __CLASS__, 'after_rest_response' ), 99 );
+		add_action( 'admin_init', array( __CLASS__, 'queue_delete_after_metabox' ) );
+		add_action( 'admin_init', array( __CLASS__, 'cleanup_stale_merged_copies' ), 20 );
+		add_action( 'oli_dp_delete_rewrite_copy', array( __CLASS__, 'delete_rewrite_copy' ) );
+		add_action( 'shutdown', array( __CLASS__, 'delete_merged_copies' ), 20 );
 		add_action( 'admin_notices', array( __CLASS__, 'show_rewrite_notice' ) );
+		add_action( 'pre_get_posts', array( __CLASS__, 'exclude_merged_copies' ) );
+		add_filter( 'wp_sitemaps_posts_query_args', array( __CLASS__, 'exclude_merged_copies_from_sitemaps' ), 10, 2 );
 		add_filter( 'display_post_states', array( __CLASS__, 'add_post_state' ), 10, 2 );
+		add_filter( 'gettext', array( __CLASS__, 'relabel_publish' ), 10, 3 );
 		add_action( 'add_meta_boxes', array( __CLASS__, 'add_schedule_meta_box' ) );
 		add_action( 'post_submitbox_misc_actions', array( __CLASS__, 'add_publish_box_info' ) );
+		add_filter( 'redirect_post_location', array( __CLASS__, 'redirect_after_merge' ) );
+		add_action( 'added_post_meta', array( __CLASS__, 'maybe_invalidate_pending_delete_cache' ), 10, 3 );
+		add_action( 'updated_post_meta', array( __CLASS__, 'maybe_invalidate_pending_delete_cache' ), 10, 3 );
+		add_action( 'deleted_post_meta', array( __CLASS__, 'maybe_invalidate_pending_delete_cache' ), 10, 3 );
 	}
 
 	/**
-	 * Handle post publish for rewrite & republish.
+	 * Queue a rewrite merge when a copy is published.
+	 *
+	 * Merge and deletion wait until after the save finishes so REST, the
+	 * editor, and cron can finish reading the copy. A still-future GMT date
+	 * is treated as scheduled and is not merged.
+	 *
+	 * @since 1.0.0
 	 *
 	 * @param string  $new_status New post status.
 	 * @param string  $old_status Old post status.
 	 * @param WP_Post $post       Post object.
 	 */
 	public static function handle_publish( $new_status, $old_status, $post ) {
-		// Check if this is a rewrite copy being published.
-		$original_post_id = get_post_meta( $post->ID, '_oli_dp_original_post', true );
+		if ( self::$merging || ! $post instanceof WP_Post ) {
+			return;
+		}
 
+		if ( self::is_pending_delete_copy( $post->ID ) ) {
+			if ( self::should_keep_pending_delete_as_draft( $new_status ) ) {
+				self::hide_merged_copy( (int) $post->ID );
+			}
+			return;
+		}
+
+		if ( 'future' === $new_status ) {
+			if ( $post->post_date_gmt && '0000-00-00 00:00:00' !== $post->post_date_gmt ) {
+				update_post_meta( $post->ID, '_oli_dp_scheduled_gmt', $post->post_date_gmt );
+			} else {
+				delete_post_meta( $post->ID, '_oli_dp_scheduled_gmt' );
+			}
+			return;
+		}
+
+		if ( 'future' === $old_status ) {
+			delete_post_meta( $post->ID, '_oli_dp_scheduled_gmt' );
+		}
+
+		if ( 'publish' !== $new_status ) {
+			return;
+		}
+
+		$original_post_id = absint( get_post_meta( $post->ID, '_oli_dp_original_post', true ) );
 		if ( ! $original_post_id ) {
 			return;
 		}
 
-		// Only proceed if the post is being published or scheduled.
-		if ( ! in_array( $new_status, array( 'publish', 'future' ), true ) ) {
+		if ( self::has_future_publish_date( $post ) ) {
 			return;
 		}
 
@@ -50,22 +152,633 @@ class Oli_DP_Rewrite_Republish {
 			return;
 		}
 
-		// Verify nonce if present (publish form). Cron-scheduled transitions have no nonce.
-		if ( isset( $_POST['oli_dp_rewrite_nonce'] ) ) {
-			if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['oli_dp_rewrite_nonce'] ) ), 'oli_dp_rewrite_publish' ) ) {
-				return;
+		// No request input is read here: the save itself is authenticated by core (post.php nonce or REST
+		// cookie nonce), and the merge is authorized above with current_user_can() on both posts.
+
+		self::$pending_merges[ (int) $post->ID ] = $original_post_id;
+	}
+
+	/**
+	 * Force a merged copy back to draft before wp_insert_post() writes a new status.
+	 *
+	 * Covers classic editor, cron, and REST updates that still call wp_insert_post().
+	 *
+	 * @since 1.0.5
+	 *
+	 * @param array $data    Sanitized post data.
+	 * @param array $postarr Raw post data.
+	 * @return array
+	 */
+	public static function prevent_pending_delete_publish( $data, $postarr ) {
+		$post_id = isset( $postarr['ID'] ) ? absint( $postarr['ID'] ) : 0;
+		if ( ! $post_id || empty( $data['post_status'] ) ) {
+			return $data;
+		}
+
+		if ( ! self::should_keep_pending_delete_as_draft( $data['post_status'] ) || ! self::is_pending_delete_copy( $post_id ) ) {
+			return $data;
+		}
+
+		$data['post_status'] = 'draft';
+
+		return $data;
+	}
+
+	/**
+	 * Register REST insert guards for every REST-enabled post type.
+	 *
+	 * @since 1.0.5
+	 */
+	public static function register_rest_guards() {
+		$post_types = get_post_types( array( 'show_in_rest' => true ), 'names' );
+
+		foreach ( $post_types as $post_type ) {
+			add_filter( 'rest_pre_insert_' . $post_type, array( __CLASS__, 'rest_prevent_pending_delete_publish' ), 10, 2 );
+		}
+	}
+
+	/**
+	 * Keep a merged rewrite copy as draft when REST tries to change its status.
+	 *
+	 * @since 1.0.5
+	 *
+	 * @param stdClass        $prepared_post Prepared post data.
+	 * @param WP_REST_Request $request       REST request.
+	 * @return stdClass
+	 */
+	public static function rest_prevent_pending_delete_publish( $prepared_post, $request ) {
+		if ( ! is_object( $prepared_post ) ) {
+			return $prepared_post;
+		}
+
+		$post_id = 0;
+		if ( isset( $prepared_post->ID ) ) {
+			$post_id = absint( $prepared_post->ID );
+		} elseif ( $request instanceof WP_REST_Request ) {
+			$post_id = absint( $request->get_param( 'id' ) );
+		}
+
+		if ( ! $post_id || ! self::is_pending_delete_copy( $post_id ) ) {
+			return $prepared_post;
+		}
+
+		$status = '';
+		if ( isset( $prepared_post->post_status ) ) {
+			$status = $prepared_post->post_status;
+		} elseif ( $request instanceof WP_REST_Request ) {
+			$status = (string) $request->get_param( 'status' );
+		}
+
+		if ( self::should_keep_pending_delete_as_draft( $status ) ) {
+			$prepared_post->post_status = 'draft';
+		}
+
+		return $prepared_post;
+	}
+
+	/**
+	 * Merge a queued rewrite copy after wp_insert_post() has finished.
+	 *
+	 * The copy is left in place until {@see delete_merged_copies()} so the
+	 * REST controller and editor can still read a valid post (`id` stays set).
+	 *
+	 * @since 1.0.2
+	 *
+	 * @param int     $post_id Post ID.
+	 * @param WP_Post $post    Post object.
+	 * @param bool    $update  Whether this is an existing post.
+	 */
+	public static function merge_after_save( $post_id, $post, $update ) {
+		unset( $update );
+
+		$post_id = (int) $post_id;
+		if ( ! isset( self::$pending_merges[ $post_id ] ) ) {
+			return;
+		}
+
+		$original_post_id = self::$pending_merges[ $post_id ];
+		unset( self::$pending_merges[ $post_id ] );
+
+		$fresh = get_post( $post_id );
+		if ( ! $fresh instanceof WP_Post ) {
+			$fresh = $post instanceof WP_Post ? $post : null;
+		}
+
+		if ( ! $fresh || 'publish' !== $fresh->post_status || self::has_future_publish_date( $fresh ) ) {
+			return;
+		}
+
+		self::run_merge( $post_id, $original_post_id );
+	}
+
+	/**
+	 * Delete merged copies after a REST response has been built.
+	 *
+	 * @since 1.0.2
+	 *
+	 * @param mixed $response REST response.
+	 * @return mixed
+	 */
+	public static function after_rest_response( $response ) {
+		self::finish_pending_merges();
+		return $response;
+	}
+
+	/**
+	 * Queue a Gutenberg meta-box-loader copy for deletion after this request.
+	 *
+	 * Gutenberg POSTs `post.php?meta-box-loader=1` after the REST save. The
+	 * copy must still exist for that request, then it can be removed.
+	 *
+	 * @since 1.0.3
+	 */
+	public static function queue_delete_after_metabox() {
+		if ( ! self::is_meta_box_loader_request() ) {
+			return;
+		}
+
+		$post_id = self::get_meta_box_loader_post_id();
+
+		if ( ! $post_id || ! get_post_meta( $post_id, '_oli_dp_pending_delete', true ) ) {
+			return;
+		}
+
+		self::$pending_deletes[] = $post_id;
+	}
+
+	/**
+	 * Hide a merged rewrite copy from the public site without firing rewrite hooks.
+	 *
+	 * Gutenberg's meta-box-loader still loads the row with get_post().
+	 *
+	 * @since 1.0.4
+	 *
+	 * @param int $rewrite_id Rewrite copy ID.
+	 */
+	public static function hide_merged_copy( $rewrite_id ) {
+		global $wpdb;
+
+		$rewrite_id = absint( $rewrite_id );
+		if ( ! $rewrite_id ) {
+			return;
+		}
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$wpdb->update(
+			$wpdb->posts,
+			array(
+				'post_status' => 'draft',
+			),
+			array(
+				'ID' => $rewrite_id,
+			),
+			array( '%s' ),
+			array( '%d' )
+		);
+
+		clean_post_cache( $rewrite_id );
+	}
+
+	/**
+	 * Exclude merged rewrite copies from front-end, REST, and sitemap listings.
+	 *
+	 * Admin list screens and other wp-admin queries are left unchanged.
+	 * Direct get_post() lookups (Gutenberg, meta-box-loader) are unchanged.
+	 *
+	 * @since 1.0.4
+	 *
+	 * @param WP_Query $query Query.
+	 */
+	public static function exclude_merged_copies( $query ) {
+		if ( ! $query instanceof WP_Query ) {
+			return;
+		}
+
+		if ( $query->get( 'oli_dp_include_pending_delete' ) ) {
+			return;
+		}
+
+		if ( ! self::query_should_exclude_merged_copies( $query ) ) {
+			return;
+		}
+
+		$exclude = self::get_pending_delete_ids();
+		if ( empty( $exclude ) ) {
+			return;
+		}
+
+		$existing = $query->get( 'post__not_in' );
+		$existing = is_array( $existing ) ? $existing : array();
+
+		$query->set( 'post__not_in', array_values( array_unique( array_merge( $existing, $exclude ) ) ) );
+	}
+
+	/**
+	 * Exclude merged rewrite copies from sitemaps.
+	 *
+	 * @since 1.0.4
+	 *
+	 * @param array  $args      Query args.
+	 * @param string $post_type Post type.
+	 * @return array
+	 */
+	public static function exclude_merged_copies_from_sitemaps( $args, $post_type = '' ) {
+		unset( $post_type );
+
+		$exclude = self::get_pending_delete_ids();
+		if ( empty( $exclude ) ) {
+			return $args;
+		}
+
+		$not_in               = isset( $args['post__not_in'] ) ? (array) $args['post__not_in'] : array();
+		$args['post__not_in'] = array_values( array_unique( array_merge( $not_in, $exclude ) ) );
+
+		return $args;
+	}
+
+	/**
+	 * Delete merged copies older than five minutes from admin screens.
+	 *
+	 * Cron may be disabled (`DISABLE_WP_CRON`); visiting wp-admin still
+	 * removes leftover copies without waiting for wp-cron.
+	 *
+	 * @since 1.0.4
+	 */
+	public static function cleanup_stale_merged_copies() {
+		if ( ! is_admin() || wp_doing_ajax() || wp_doing_cron() || self::is_rest_request() ) {
+			return;
+		}
+
+		if ( empty( self::get_pending_delete_ids() ) ) {
+			return;
+		}
+
+		self::delete_stale_merged_copies();
+	}
+
+	/**
+	 * Permanently delete merged copies older than the given age.
+	 *
+	 * @since 1.0.4
+	 *
+	 * @param int $max_age Maximum age in seconds. Default 5 minutes.
+	 * @return int[] Deleted post IDs.
+	 */
+	public static function delete_stale_merged_copies( $max_age = 300 ) {
+		$ids = self::get_stale_merged_copy_ids( $max_age );
+		if ( empty( $ids ) ) {
+			return array();
+		}
+
+		$deleted = array();
+
+		foreach ( $ids as $rewrite_id ) {
+			self::unschedule_copy_deletion( $rewrite_id );
+			if ( get_post( $rewrite_id ) ) {
+				wp_delete_post( $rewrite_id, true );
+				$deleted[] = $rewrite_id;
 			}
 		}
 
-		// Merge the rewrite copy back to the original.
-		self::merge_to_original( $post->ID, $original_post_id );
+		self::invalidate_pending_delete_ids_cache();
 
-		// Set a transient for success message.
-		set_transient( 'oli_dp_republish_success_' . get_current_user_id(), $original_post_id, 30 );
+		return $deleted;
+	}
+
+	/**
+	 * IDs of merged copies marked for deletion.
+	 *
+	 * Cached in a transient and in a per-request static. The transient is
+	 * invalidated when a copy is marked pending-delete or deleted.
+	 *
+	 * @since 1.0.4
+	 *
+	 * @return int[]
+	 */
+	public static function get_pending_delete_ids() {
+		if ( null !== self::$pending_delete_ids ) {
+			return self::$pending_delete_ids;
+		}
+
+		$cached = get_transient( self::PENDING_DELETE_IDS_TRANSIENT );
+		if ( false !== $cached && is_array( $cached ) ) {
+			self::$pending_delete_ids = self::normalize_id_list( $cached );
+			return self::$pending_delete_ids;
+		}
+
+		global $wpdb;
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$ids = $wpdb->get_col(
+			$wpdb->prepare(
+				'SELECT post_id FROM %i WHERE meta_key = %s LIMIT %d',
+				$wpdb->postmeta,
+				'_oli_dp_pending_delete',
+				100
+			)
+		);
+
+		self::$pending_delete_ids = self::normalize_id_list( $ids );
+		set_transient( self::PENDING_DELETE_IDS_TRANSIENT, self::$pending_delete_ids, HOUR_IN_SECONDS );
+
+		return self::$pending_delete_ids;
+	}
+
+	/**
+	 * Drop the pending-delete ID caches.
+	 *
+	 * @since 1.0.5
+	 */
+	public static function invalidate_pending_delete_ids_cache() {
+		self::$pending_delete_ids = null;
+		delete_transient( self::PENDING_DELETE_IDS_TRANSIENT );
+	}
+
+	/**
+	 * Invalidate caches when `_oli_dp_pending_delete` is written or removed.
+	 *
+	 * @since 1.0.5
+	 *
+	 * @param mixed  $meta_id  Meta ID or list of IDs.
+	 * @param int    $post_id  Post ID.
+	 * @param string $meta_key Meta key.
+	 */
+	public static function maybe_invalidate_pending_delete_cache( $meta_id, $post_id, $meta_key ) {
+		unset( $meta_id, $post_id );
+
+		if ( '_oli_dp_pending_delete' === $meta_key ) {
+			self::invalidate_pending_delete_ids_cache();
+		}
+	}
+
+	/**
+	 * IDs of merged copies older than the given age.
+	 *
+	 * @since 1.0.4
+	 *
+	 * @param int $max_age Maximum age in seconds.
+	 * @return int[]
+	 */
+	public static function get_stale_merged_copy_ids( $max_age = 300 ) {
+		$ids = self::get_pending_delete_ids();
+		if ( empty( $ids ) ) {
+			return array();
+		}
+
+		$max_age = absint( $max_age );
+		$cutoff  = time() - $max_age;
+		$stale   = array();
+
+		foreach ( $ids as $post_id ) {
+			$marked = get_post_meta( $post_id, '_oli_dp_pending_delete', true );
+			if ( $marked && (int) $marked <= $cutoff ) {
+				$stale[] = (int) $post_id;
+			}
+		}
+
+		return $stale;
+	}
+
+	/**
+	 * Cron callback: delete a rewrite copy marked for delayed removal.
+	 *
+	 * @since 1.0.3
+	 *
+	 * @param int $rewrite_id Rewrite copy ID.
+	 */
+	public static function delete_rewrite_copy( $rewrite_id ) {
+		$rewrite_id = absint( $rewrite_id );
+		if ( ! $rewrite_id || ! get_post( $rewrite_id ) ) {
+			return;
+		}
+
+		if ( ! get_post_meta( $rewrite_id, '_oli_dp_pending_delete', true ) ) {
+			return;
+		}
+
+		self::unschedule_copy_deletion( $rewrite_id );
+		wp_delete_post( $rewrite_id, true );
+		self::invalidate_pending_delete_ids_cache();
+	}
+
+	/**
+	 * Merge leftover copies and delete those that are safe to remove now.
+	 *
+	 * REST saves skip deletion so Gutenberg's follow-up meta-box request can
+	 * still load the copy. Cron and classic-editor requests delete immediately.
+	 *
+	 * @since 1.0.2
+	 */
+	public static function delete_merged_copies() {
+		self::finish_pending_merges();
+
+		if ( self::should_defer_copy_deletion() ) {
+			return;
+		}
+
+		self::delete_queued_copies();
+	}
+
+	/**
+	 * Run queued merges if wp_after_insert_post was skipped.
+	 *
+	 * @since 1.0.3
+	 */
+	private static function finish_pending_merges() {
+		if ( empty( self::$pending_merges ) ) {
+			return;
+		}
+
+		foreach ( self::$pending_merges as $rewrite_id => $original_id ) {
+			$post = get_post( $rewrite_id );
+			if ( ! $post || 'publish' !== $post->post_status || self::has_future_publish_date( $post ) ) {
+				continue;
+			}
+			self::run_merge( $rewrite_id, $original_id );
+		}
+
+		self::$pending_merges = array();
+	}
+
+	/**
+	 * Permanently delete copies queued for this request.
+	 *
+	 * @since 1.0.3
+	 */
+	private static function delete_queued_copies() {
+		if ( empty( self::$pending_deletes ) ) {
+			return;
+		}
+
+		$ids                   = array_unique( array_map( 'intval', self::$pending_deletes ) );
+		self::$pending_deletes = array();
+
+		foreach ( $ids as $rewrite_id ) {
+			if ( ! get_post( $rewrite_id ) ) {
+				continue;
+			}
+
+			self::unschedule_copy_deletion( $rewrite_id );
+			wp_delete_post( $rewrite_id, true );
+		}
+
+		self::invalidate_pending_delete_ids_cache();
+	}
+
+	/**
+	 * Whether this request must keep the rewrite copy until a later request.
+	 *
+	 * @since 1.0.3
+	 *
+	 * @return bool
+	 */
+	private static function should_defer_copy_deletion() {
+		if ( wp_doing_cron() || self::is_meta_box_loader_request() ) {
+			return false;
+		}
+
+		return self::is_rest_request();
+	}
+
+	/**
+	 * Whether this is Gutenberg's meta-box save follow-up.
+	 *
+	 * @since 1.0.3
+	 *
+	 * @return bool
+	 */
+	private static function is_meta_box_loader_request() {
+		if ( ! isset( $_REQUEST['meta-box-loader'], $_REQUEST['meta-box-loader-nonce'] ) ) {
+			return false;
+		}
+
+		// Core adds this nonce to every block editor meta-box save (edit-form-blocks.php).
+		return false !== wp_verify_nonce( sanitize_text_field( wp_unslash( $_REQUEST['meta-box-loader-nonce'] ) ), 'meta-box-loader' );
+	}
+
+	/**
+	 * Post ID of a verified Gutenberg meta-box-loader request the user can edit.
+	 *
+	 * @since 1.0.10
+	 *
+	 * @return int
+	 */
+	private static function get_meta_box_loader_post_id() {
+		if ( ! isset( $_REQUEST['meta-box-loader-nonce'] )
+			|| ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_REQUEST['meta-box-loader-nonce'] ) ), 'meta-box-loader' ) ) {
+			return 0;
+		}
+
+		$post_id = 0;
+		if ( isset( $_REQUEST['post'] ) ) {
+			$post_id = absint( wp_unslash( $_REQUEST['post'] ) );
+		} elseif ( isset( $_REQUEST['post_ID'] ) ) {
+			$post_id = absint( wp_unslash( $_REQUEST['post_ID'] ) );
+		}
+
+		if ( ! $post_id || ! current_user_can( 'edit_post', $post_id ) ) {
+			return 0;
+		}
+
+		return $post_id;
+	}
+
+	/**
+	 * Schedule a fallback deletion about 60 seconds later.
+	 *
+	 * @since 1.0.3
+	 *
+	 * @param int $rewrite_id Rewrite copy ID.
+	 */
+	private static function schedule_copy_deletion( $rewrite_id ) {
+		$rewrite_id = (int) $rewrite_id;
+		if ( ! $rewrite_id || wp_next_scheduled( 'oli_dp_delete_rewrite_copy', array( $rewrite_id ) ) ) {
+			return;
+		}
+
+		wp_schedule_single_event( time() + 60, 'oli_dp_delete_rewrite_copy', array( $rewrite_id ) );
+	}
+
+	/**
+	 * Cancel a scheduled rewrite-copy deletion.
+	 *
+	 * @since 1.0.3
+	 *
+	 * @param int $rewrite_id Rewrite copy ID.
+	 */
+	private static function unschedule_copy_deletion( $rewrite_id ) {
+		$rewrite_id = (int) $rewrite_id;
+		$timestamp  = wp_next_scheduled( 'oli_dp_delete_rewrite_copy', array( $rewrite_id ) );
+		if ( $timestamp ) {
+			wp_unschedule_event( $timestamp, 'oli_dp_delete_rewrite_copy', array( $rewrite_id ) );
+		}
+	}
+
+	/**
+	 * Merge a rewrite copy into its original and queue the copy for deletion.
+	 *
+	 * @since 1.0.2
+	 *
+	 * @param int $rewrite_id  Rewrite copy ID.
+	 * @param int $original_id Original post ID.
+	 */
+	private static function run_merge( $rewrite_id, $original_id ) {
+		if ( self::$merging ) {
+			return;
+		}
+
+		self::$merging = true;
+		$merged        = self::merge_to_original( $rewrite_id, $original_id );
+		self::$merging = false;
+
+		if ( ! $merged ) {
+			return;
+		}
+
+		if ( is_user_logged_in() ) {
+			set_transient( 'oli_dp_republish_success_' . get_current_user_id(), $original_id, 60 );
+		}
+
+		if ( is_admin() && ! wp_doing_cron() && ! wp_doing_ajax() && ! self::is_rest_request() ) {
+			self::$redirect_original_id = $original_id;
+		}
+	}
+
+	/**
+	 * Whether a rewrite copy still has a future GMT publish date.
+	 *
+	 * Compares UTC (`time()`) to the current `post_date_gmt` so a +60s
+	 * schedule is not merged early, and a cancelled schedule can publish now.
+	 *
+	 * @since 1.0.2
+	 *
+	 * @param WP_Post $post Post object.
+	 * @return bool
+	 */
+	private static function has_future_publish_date( $post ) {
+		$candidates = array( $post->post_date_gmt );
+
+		if ( $post->post_date && function_exists( 'get_gmt_from_date' ) ) {
+			$candidates[] = get_gmt_from_date( $post->post_date );
+		}
+
+		foreach ( $candidates as $gmt ) {
+			if ( Oli_DP_Utils::gmt_mysql_is_future( $gmt ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
 	 * Merge rewrite copy to original post.
+	 *
+	 * The original permalink and publish date are preserved so the live URL
+	 * does not change. The working copy is queued for permanent deletion
+	 * after the current save (REST/editor/cron) finishes.
+	 *
+	 * @since 1.0.0
 	 *
 	 * @param int $rewrite_post_id  The rewrite copy post ID.
 	 * @param int $original_post_id The original post ID.
@@ -79,48 +792,77 @@ class Oli_DP_Rewrite_Republish {
 			return false;
 		}
 
-		// Update the original post with the rewrite content.
+		/**
+		 * Fires before a rewrite copy is merged into the original.
+		 *
+		 * @since 1.0.0
+		 *
+		 * @param int $original_post_id Original post ID.
+		 * @param int $rewrite_post_id  Rewrite copy ID.
+		 */
+		do_action( 'oli_dp_before_rewrite_merge', $original_post_id, $rewrite_post_id );
+
 		$update_data = array(
-			'ID'           => $original_post_id,
-			'post_title'   => $rewrite_post->post_title,
-			'post_content' => $rewrite_post->post_content,
-			'post_excerpt' => $rewrite_post->post_excerpt,
+			'ID'            => $original_post_id,
+			'post_title'    => $rewrite_post->post_title,
+			'post_content'  => $rewrite_post->post_content,
+			'post_excerpt'  => $rewrite_post->post_excerpt,
+			'post_name'     => $original_post->post_name,
+			'post_date'     => $original_post->post_date,
+			'post_date_gmt' => $original_post->post_date_gmt,
+			'post_author'   => $rewrite_post->post_author,
+			'post_password' => $rewrite_post->post_password,
+			'menu_order'    => $rewrite_post->menu_order,
 		);
 
-		$result = wp_update_post( $update_data );
+		/**
+		 * Filter post data written to the original during a rewrite merge.
+		 *
+		 * @since 1.0.0
+		 *
+		 * @param array   $update_data    Data passed to wp_update_post().
+		 * @param WP_Post $rewrite_post   Rewrite copy.
+		 * @param WP_Post $original_post  Original post.
+		 */
+		$update_data = apply_filters( 'oli_dp_rewrite_merge_post_data', $update_data, $rewrite_post, $original_post );
+
+		$result = wp_update_post( $update_data, true );
 
 		if ( is_wp_error( $result ) ) {
 			return false;
 		}
 
-		// Copy meta data.
-		$settings = get_option( 'oli_dp_settings', Oli_DP_Settings::get_default_settings() );
+		$settings = Oli_DP_Settings::get_settings();
 
-		// Get all meta from rewrite post.
+		$excluded_keys = array_merge(
+			Oli_DP_Utils::parse_list( isset( $settings['excluded_meta'] ) ? $settings['excluded_meta'] : '' ),
+			Oli_DP_Utils::default_internal_meta_keys()
+		);
+
+		/**
+		 * Filter meta keys skipped when merging a rewrite copy.
+		 *
+		 * @since 1.0.0
+		 *
+		 * @param string[] $excluded_keys     Keys and wildcard patterns.
+		 * @param int      $original_post_id  Original post ID.
+		 * @param int      $rewrite_post_id   Rewrite copy ID.
+		 */
+		$excluded_keys = apply_filters( 'oli_dp_rewrite_excluded_meta_keys', $excluded_keys, $original_post_id, $rewrite_post_id );
+
 		$rewrite_meta = get_post_meta( $rewrite_post_id );
-
-		// Get excluded meta keys.
-		$excluded_meta    = isset( $settings['excluded_meta'] ) ? $settings['excluded_meta'] : '';
-		$excluded_keys    = array_map( 'trim', explode( ',', $excluded_meta ) );
-		$default_excluded = array( '_edit_lock', '_edit_last', '_oli_dp_original_post' );
-		$excluded_keys    = array_merge( $excluded_keys, $default_excluded );
-
 		foreach ( $rewrite_meta as $meta_key => $meta_values ) {
-			// Skip excluded keys.
-			if ( self::should_exclude_meta( $meta_key, $excluded_keys ) ) {
+			if ( Oli_DP_Utils::should_exclude_meta( $meta_key, $excluded_keys ) ) {
 				continue;
 			}
 
-			// Delete old meta values from original.
 			delete_post_meta( $original_post_id, $meta_key );
 
-			// Copy new meta values.
 			foreach ( $meta_values as $meta_value ) {
 				add_post_meta( $original_post_id, $meta_key, maybe_unserialize( $meta_value ) );
 			}
 		}
 
-		// Copy taxonomies.
 		$taxonomies = get_object_taxonomies( $original_post->post_type );
 		foreach ( $taxonomies as $taxonomy ) {
 			$terms = wp_get_object_terms( $rewrite_post_id, $taxonomy, array( 'fields' => 'ids' ) );
@@ -129,20 +871,44 @@ class Oli_DP_Rewrite_Republish {
 			}
 		}
 
-		// Copy featured image.
 		$thumbnail_id = get_post_thumbnail_id( $rewrite_post_id );
 		if ( $thumbnail_id ) {
-			set_post_thumbnail( $original_post_id, $thumbnail_id );
+			update_post_meta( $original_post_id, '_thumbnail_id', $thumbnail_id );
 		} else {
-			delete_post_thumbnail( $original_post_id );
+			delete_post_meta( $original_post_id, '_thumbnail_id' );
 		}
 
-		// Delete the rewrite copy.
+		$template = get_page_template_slug( $rewrite_post_id );
+		if ( $template ) {
+			update_post_meta( $original_post_id, '_wp_page_template', $template );
+		} else {
+			delete_post_meta( $original_post_id, '_wp_page_template' );
+		}
+
+		$format = get_post_format( $rewrite_post_id );
+		if ( $format ) {
+			set_post_format( $original_post_id, $format );
+		} else {
+			set_post_format( $original_post_id, false );
+		}
+
 		delete_post_meta( $original_post_id, '_oli_dp_rewrite_copy' );
-		wp_delete_post( $rewrite_post_id, true );
+		delete_post_meta( $rewrite_post_id, '_oli_dp_original_post' );
+		delete_post_meta( $rewrite_post_id, '_oli_dp_scheduled_gmt' );
+		update_post_meta( $rewrite_post_id, '_oli_dp_pending_delete', (string) time() );
+
+		self::hide_merged_copy( (int) $rewrite_post_id );
+
+		if ( self::should_defer_copy_deletion() ) {
+			self::schedule_copy_deletion( (int) $rewrite_post_id );
+		} else {
+			self::$pending_deletes[] = (int) $rewrite_post_id;
+		}
 
 		/**
-		 * Action after rewrite & republish merge.
+		 * Fires after a rewrite copy is merged back to the original.
+		 *
+		 * @since 1.0.0
 		 *
 		 * @param int $original_post_id The original post ID.
 		 * @param int $rewrite_post_id  The rewrite copy post ID.
@@ -153,101 +919,101 @@ class Oli_DP_Rewrite_Republish {
 	}
 
 	/**
-	 * Check if meta key should be excluded.
+	 * Show admin notice for rewrite copies and successful republish.
 	 *
-	 * @param string $meta_key      The meta key to check.
-	 * @param array  $excluded_keys Array of excluded keys (supports wildcards).
-	 * @return bool True if should be excluded, false otherwise.
-	 */
-	private static function should_exclude_meta( $meta_key, $excluded_keys ) {
-		foreach ( $excluded_keys as $pattern ) {
-			if ( empty( $pattern ) ) {
-				continue;
-			}
-
-			$regex_pattern = '/^' . str_replace( array( '\*', '\?' ), array( '.*', '.' ), preg_quote( $pattern, '/' ) ) . '$/';
-
-			if ( preg_match( $regex_pattern, $meta_key ) ) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/**
-	 * Show admin notice for rewrite copies.
+	 * @since 1.0.0
 	 */
 	public static function show_rewrite_notice() {
-		// Check for success message.
-		$success_post_id = get_transient( 'oli_dp_republish_success_' . get_current_user_id() );
-		if ( $success_post_id ) {
-			delete_transient( 'oli_dp_republish_success_' . get_current_user_id() );
-			$post = get_post( $success_post_id );
-			if ( $post ) {
-				?>
-				<div class="notice notice-success is-dismissible">
-					<p>
-						<?php
-						printf(
-							/* translators: %s: post title */
-							esc_html__( 'Successfully republished "%s" with your changes!', 'oli-duplicate-post' ),
-							esc_html( $post->post_title )
-						);
-						?>
-					</p>
-				</div>
-				<?php
-			}
+		if ( Oli_DP_Utils::allows_admin_notice( 'post_edit' ) || Oli_DP_Utils::allows_admin_notice( 'post_list' ) ) {
+			self::render_success_notice();
 		}
 
-		$screen = get_current_screen();
-
-		if ( ! $screen || 'post' !== $screen->base ) {
+		if ( ! Oli_DP_Utils::allows_admin_notice( 'post_edit' ) ) {
 			return;
 		}
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only check to display notice.
-		$post_id = isset( $_GET['post'] ) ? absint( $_GET['post'] ) : 0;
-
+		$post_id = self::get_requested_post_id();
 		if ( ! $post_id ) {
 			return;
 		}
 
-		$original_post_id = get_post_meta( $post_id, '_oli_dp_original_post', true );
-
+		$original_post_id = absint( get_post_meta( $post_id, '_oli_dp_original_post', true ) );
 		if ( ! $original_post_id ) {
 			return;
 		}
 
 		$original_post = get_post( $original_post_id );
-
 		if ( ! $original_post ) {
 			return;
 		}
 
 		$edit_link    = get_edit_post_link( $original_post_id );
 		$view_link    = get_permalink( $original_post_id );
-		$compare_link = add_query_arg(
-			array(
-				'page'     => 'oli-dp-compare',
-				'original' => $original_post_id,
-				'rewrite'  => $post_id,
+		$compare_link = wp_nonce_url(
+			add_query_arg(
+				array(
+					'page'     => 'oli-dp-compare',
+					'original' => $original_post_id,
+					'rewrite'  => $post_id,
+				),
+				admin_url( 'admin.php' )
 			),
-			admin_url( 'admin.php' )
+			'oli_dp_compare_' . $original_post_id . '_' . $post_id
 		);
 
 		?>
 		<div class="notice notice-info">
 			<p>
 				<?php
+				echo wp_kses(
+					sprintf(
+						/* translators: 1: Original post title, 2: Edit link, 3: View link, 4: Compare link */
+						__( 'This is a <strong>Rewrite &amp; Republish</strong> copy of "%1$s". When you publish this post, it will replace the original. <a href="%2$s">Edit original</a> | <a href="%3$s" target="_blank" rel="noopener noreferrer">View original</a> | <a href="%4$s">Compare changes</a>', 'oli-duplicate-post' ),
+						esc_html( $original_post->post_title ),
+						esc_url( $edit_link ),
+						esc_url( $view_link ),
+						esc_url( $compare_link )
+					),
+					array(
+						'strong' => array(),
+						'a'      => array(
+							'href'   => array(),
+							'target' => array(),
+							'rel'    => array(),
+						),
+					)
+				);
+				?>
+			</p>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Render the republish success notice when a transient is present.
+	 *
+	 * @since 1.0.0
+	 */
+	private static function render_success_notice() {
+		$success_post_id = get_transient( 'oli_dp_republish_success_' . get_current_user_id() );
+		if ( ! $success_post_id ) {
+			return;
+		}
+
+		delete_transient( 'oli_dp_republish_success_' . get_current_user_id() );
+		$post = get_post( $success_post_id );
+		if ( ! $post ) {
+			return;
+		}
+
+		?>
+		<div class="notice notice-success is-dismissible">
+			<p>
+				<?php
 				printf(
-					/* translators: 1: Original post title, 2: Edit link, 3: View link, 4: Compare link */
-					wp_kses_post( __( 'This is a <strong>Rewrite & Republish</strong> copy of "%1$s". When you publish this post, it will replace the original. <a href="%2$s">Edit original</a> | <a href="%3$s" target="_blank">View original</a> | <a href="%4$s">Compare changes</a>', 'oli-duplicate-post' ) ),
-					esc_html( $original_post->post_title ),
-					esc_url( $edit_link ),
-					esc_url( $view_link ),
-					esc_url( $compare_link )
+					/* translators: %s: post title */
+					esc_html__( 'Successfully republished "%s" with your changes.', 'oli-duplicate-post' ),
+					esc_html( $post->post_title )
 				);
 				?>
 			</p>
@@ -258,37 +1024,90 @@ class Oli_DP_Rewrite_Republish {
 	/**
 	 * Add post state for rewrite copies.
 	 *
+	 * @since 1.0.0
+	 *
 	 * @param array   $post_states Array of post states.
 	 * @param WP_Post $post        Post object.
 	 * @return array Modified post states.
 	 */
 	public static function add_post_state( $post_states, $post ) {
-		$original_post_id = get_post_meta( $post->ID, '_oli_dp_original_post', true );
+		$original_post_id = absint( get_post_meta( $post->ID, '_oli_dp_original_post', true ) );
 
 		if ( $original_post_id ) {
-			$post_states['oli_dp_rewrite'] = __( 'Rewrite & Republish', 'oli-duplicate-post' );
+			$original = get_post( $original_post_id );
+			$title    = $original ? $original->post_title : '';
+			$link     = $original ? get_edit_post_link( $original_post_id ) : '';
+
+			if ( $link ) {
+				$post_states['oli_dp_rewrite'] = sprintf(
+					/* translators: %s: original post title as a link */
+					__( 'Rewrite of: %s', 'oli-duplicate-post' ),
+					sprintf(
+						'<a href="%s">%s</a>',
+						esc_url( $link ),
+						esc_html( $title )
+					)
+				);
+			} else {
+				$post_states['oli_dp_rewrite'] = sprintf(
+					/* translators: %s: original post title */
+					__( 'Rewrite of: %s', 'oli-duplicate-post' ),
+					esc_html( $title )
+				);
+			}
 		}
 
-		$rewrite_copy_id = get_post_meta( $post->ID, '_oli_dp_rewrite_copy', true );
+		$rewrite_copy_id = absint( get_post_meta( $post->ID, '_oli_dp_rewrite_copy', true ) );
 
 		if ( $rewrite_copy_id ) {
-			$post_states['oli_dp_original'] = __( 'Original (being rewritten)', 'oli-duplicate-post' );
+			$post_states['oli_dp_original'] = sprintf(
+				/* translators: %d: rewrite copy post ID */
+				__( 'Rewrite in progress (draft #%d)', 'oli-duplicate-post' ),
+				$rewrite_copy_id
+			);
 		}
 
 		return $post_states;
 	}
 
 	/**
-	 * Add schedule meta box for rewrite copies.
+	 * Relabel the classic-editor Publish button on rewrite copies.
+	 *
+	 * @since 1.0.4
+	 *
+	 * @param string $translation Translated text.
+	 * @param string $text        Original text.
+	 * @param string $domain      Text domain.
+	 * @return string
 	 */
-	public static function add_schedule_meta_box() {
-		$screen = get_current_screen();
-		if ( ! $screen ) {
-			return;
+	public static function relabel_publish( $translation, $text, $domain ) {
+		if ( 'default' !== $domain ) {
+			return $translation;
 		}
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only check to determine if meta box should be added.
-		$post_id = isset( $_GET['post'] ) ? absint( $_GET['post'] ) : 0;
+		if ( 'Publish' !== $text && 'Publish…' !== $text && 'Publish...' !== $text ) {
+			return $translation;
+		}
+
+		if ( ! is_admin() ) {
+			return $translation;
+		}
+
+		$post_id = self::get_requested_post_id();
+		if ( ! $post_id || ! get_post_meta( $post_id, '_oli_dp_original_post', true ) ) {
+			return $translation;
+		}
+
+		return __( 'Republish', 'oli-duplicate-post' );
+	}
+
+	/**
+	 * Add schedule meta box for rewrite copies.
+	 *
+	 * @since 1.0.0
+	 */
+	public static function add_schedule_meta_box() {
+		$post_id = self::get_requested_post_id();
 		if ( ! $post_id ) {
 			return;
 		}
@@ -298,11 +1117,16 @@ class Oli_DP_Rewrite_Republish {
 			return;
 		}
 
+		$post = get_post( $post_id );
+		if ( ! $post ) {
+			return;
+		}
+
 		add_meta_box(
 			'oli_dp_republish_schedule',
 			__( 'Republish Schedule', 'oli-duplicate-post' ),
 			array( __CLASS__, 'render_schedule_meta_box' ),
-			$screen->post_type,
+			$post->post_type,
 			'side',
 			'high'
 		);
@@ -310,6 +1134,8 @@ class Oli_DP_Rewrite_Republish {
 
 	/**
 	 * Render schedule meta box.
+	 *
+	 * @since 1.0.0
 	 *
 	 * @param WP_Post $post Post object.
 	 */
@@ -320,6 +1146,9 @@ class Oli_DP_Rewrite_Republish {
 		}
 
 		$original_post = get_post( $original_post_id );
+		if ( ! $original_post ) {
+			return;
+		}
 		?>
 		<div class="oli-dp-schedule-info">
 			<p>
@@ -327,15 +1156,15 @@ class Oli_DP_Rewrite_Republish {
 				<?php echo esc_html( $original_post->post_title ); ?>
 			</p>
 			<p class="description">
-				<?php esc_html_e( 'When you publish or schedule this post, it will automatically replace the original post with your changes.', 'oli-duplicate-post' ); ?>
+				<?php esc_html_e( 'When you publish this post it replaces the original immediately. Scheduling keeps the original live until the scheduled time.', 'oli-duplicate-post' ); ?>
 			</p>
 			<p>
 				<strong><?php esc_html_e( 'Actions:', 'oli-duplicate-post' ); ?></strong>
 			</p>
 			<ul class="oli-dp-schedule-list">
-				<li><?php esc_html_e( 'Publish Now → Replaces original immediately', 'oli-duplicate-post' ); ?></li>
-				<li><?php esc_html_e( 'Schedule → Replaces original at scheduled time', 'oli-duplicate-post' ); ?></li>
-				<li><?php esc_html_e( 'Save Draft → Keep editing without publishing', 'oli-duplicate-post' ); ?></li>
+				<li><?php esc_html_e( 'Publish now: replace the original immediately.', 'oli-duplicate-post' ); ?></li>
+				<li><?php esc_html_e( 'Schedule: replace the original at the scheduled time.', 'oli-duplicate-post' ); ?></li>
+				<li><?php esc_html_e( 'Save draft: keep editing without publishing.', 'oli-duplicate-post' ); ?></li>
 			</ul>
 		</div>
 		<?php
@@ -343,6 +1172,8 @@ class Oli_DP_Rewrite_Republish {
 
 	/**
 	 * Add info to publish box for rewrite copies.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function add_publish_box_info() {
 		global $post;
@@ -363,13 +1194,41 @@ class Oli_DP_Rewrite_Republish {
 			<p class="description oli-dp-republish-note">
 				<?php esc_html_e( 'Publishing will replace the original post.', 'oli-duplicate-post' ); ?>
 			</p>
-			<?php wp_nonce_field( 'oli_dp_rewrite_publish', 'oli_dp_rewrite_nonce' ); ?>
 		</div>
 		<?php
 	}
 
 	/**
+	 * Redirect the classic editor to the original post after a merge.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param string $location Redirect URL.
+	 * @return string
+	 */
+	public static function redirect_after_merge( $location ) {
+		$original_id = self::$redirect_original_id;
+
+		if ( ! $original_id && self::is_meta_box_loader_request() ) {
+			$original_id = self::get_pending_delete_original_id();
+		}
+
+		if ( ! $original_id ) {
+			return $location;
+		}
+
+		$edit_link = get_edit_post_link( $original_id, 'raw' );
+		if ( ! $edit_link ) {
+			return $location;
+		}
+
+		return add_query_arg( 'oli_dp_republished', 1, $edit_link );
+	}
+
+	/**
 	 * Get comparison data for two posts.
+	 *
+	 * @since 1.0.0
 	 *
 	 * @param int $post_id_1 First post ID.
 	 * @param int $post_id_2 Second post ID.
@@ -396,6 +1255,177 @@ class Oli_DP_Rewrite_Republish {
 				'original' => $post_1->post_excerpt,
 				'rewrite'  => $post_2->post_excerpt,
 			),
+		);
+	}
+
+	/**
+	 * Current post ID from the editor request.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @return int
+	 */
+	private static function get_requested_post_id() {
+		// Only the single edit screen has a current post; post.php sets it, so no request input is read.
+		if ( is_admin() ) {
+			$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+			if ( ! $screen || 'post' !== $screen->base ) {
+				return 0;
+			}
+		}
+
+		$post = get_post();
+		if ( $post instanceof WP_Post ) {
+			return (int) $post->ID;
+		}
+
+		return 0;
+	}
+
+	/**
+	 * Whether the current request is a REST request.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @return bool
+	 */
+	private static function is_rest_request() {
+		if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
+			return true;
+		}
+
+		if ( isset( $GLOBALS['wp_rest_server'] ) && $GLOBALS['wp_rest_server'] instanceof WP_REST_Server ) {
+			return true;
+		}
+
+		if ( isset( $_SERVER['REQUEST_URI'] ) ) {
+			$request_uri = sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) );
+			if ( false !== strpos( $request_uri, '/wp-json/' ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Whether this query should hide merged rewrite copies.
+	 *
+	 * Limited to front-end, REST, and sitemap queries. wp-admin list
+	 * screens and other admin queries are left alone.
+	 *
+	 * @since 1.0.5
+	 *
+	 * @param WP_Query $query Query.
+	 * @return bool
+	 */
+	private static function query_should_exclude_merged_copies( $query ) {
+		if ( self::is_rest_request() || self::is_sitemap_query( $query ) ) {
+			return true;
+		}
+
+		return ! is_admin();
+	}
+
+	/**
+	 * Whether this query is a sitemap listing.
+	 *
+	 * @since 1.0.5
+	 *
+	 * @param WP_Query $query Query.
+	 * @return bool
+	 */
+	private static function is_sitemap_query( $query ) {
+		if ( $query->get( 'sitemap' ) ) {
+			return true;
+		}
+
+		if ( isset( $GLOBALS['wp'] ) && is_object( $GLOBALS['wp'] ) && ! empty( $GLOBALS['wp']->query_vars['sitemap'] ) ) {
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Whether a post is a merged rewrite copy waiting to be deleted.
+	 *
+	 * @since 1.0.5
+	 *
+	 * @param int $post_id Post ID.
+	 * @return bool
+	 */
+	private static function is_pending_delete_copy( $post_id ) {
+		$post_id = absint( $post_id );
+		if ( ! $post_id ) {
+			return false;
+		}
+
+		return (bool) get_post_meta( $post_id, '_oli_dp_pending_delete', true );
+	}
+
+	/**
+	 * Original post ID for a merged copy, if it can still be resolved.
+	 *
+	 * The rewrite relationship meta is cleared on merge, so the republish
+	 * success transient is the fallback used by the Gutenberg meta-box-loader.
+	 *
+	 * @since 1.0.6
+	 *
+	 * @return int
+	 */
+	private static function get_pending_delete_original_id() {
+		$post_id = self::get_meta_box_loader_post_id();
+
+		if ( ! $post_id || ! self::is_pending_delete_copy( $post_id ) ) {
+			return 0;
+		}
+
+		$original_id = absint( get_post_meta( $post_id, '_oli_dp_original_post', true ) );
+		if ( $original_id ) {
+			return $original_id;
+		}
+
+		if ( ! is_user_logged_in() ) {
+			return 0;
+		}
+
+		return absint( get_transient( 'oli_dp_republish_success_' . get_current_user_id() ) );
+	}
+
+	/**
+	 * Whether a merged copy must stay draft instead of this status.
+	 *
+	 * Draft, autosave, and trash are left alone. Publish, future, private,
+	 * pending, and any other status are forced back to draft.
+	 *
+	 * @since 1.0.5
+	 *
+	 * @param string $status Post status.
+	 * @return bool
+	 */
+	private static function should_keep_pending_delete_as_draft( $status ) {
+		$status = (string) $status;
+		if ( '' === $status ) {
+			return false;
+		}
+
+		return ! in_array( $status, array( 'draft', 'auto-draft', 'trash' ), true );
+	}
+
+	/**
+	 * Normalize a list of post IDs.
+	 *
+	 * @since 1.0.5
+	 *
+	 * @param mixed $ids Raw IDs.
+	 * @return int[]
+	 */
+	private static function normalize_id_list( $ids ) {
+		return array_values(
+			array_filter(
+				array_map( 'intval', (array) $ids )
+			)
 		);
 	}
 }

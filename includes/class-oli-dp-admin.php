@@ -3,6 +3,7 @@
  * Admin interface initialization.
  *
  * @package Oli_Duplicate_Post
+ * @since 1.0.0
  */
 
 // Exit if accessed directly.
@@ -11,12 +12,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Class Oli_DP_Admin
+ * Enqueues admin assets on plugin-related screens only.
+ *
+ * @since 1.0.0
  */
 class Oli_DP_Admin {
 
 	/**
 	 * Initialize the class.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function init() {
 		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'enqueue_scripts' ) );
@@ -24,12 +29,16 @@ class Oli_DP_Admin {
 	}
 
 	/**
-	 * Enqueue admin scripts and styles.
+	 * Enqueue admin styles on this plugin's screens.
+	 *
+	 * @since 1.0.0
 	 *
 	 * @param string $hook Current admin page hook.
 	 */
 	public static function enqueue_scripts( $hook ) {
-		unset( $hook );
+		if ( ! Oli_DP_Utils::should_enqueue_admin_assets( $hook ) ) {
+			return;
+		}
 
 		wp_enqueue_style(
 			'oli-dp-admin',
@@ -42,14 +51,16 @@ class Oli_DP_Admin {
 	/**
 	 * Add plugin action links.
 	 *
+	 * @since 1.0.0
+	 *
 	 * @param array $links Existing plugin action links.
 	 * @return array Modified plugin action links.
 	 */
 	public static function add_plugin_action_links( $links ) {
 		$settings_link = sprintf(
 			'<a href="%s">%s</a>',
-			admin_url( 'options-general.php?page=oli-duplicate-post-settings' ),
-			__( 'Settings', 'oli-duplicate-post' )
+			esc_url( admin_url( 'options-general.php?page=oli-duplicate-post-settings' ) ),
+			esc_html__( 'Settings', 'oli-duplicate-post' )
 		);
 
 		array_unshift( $links, $settings_link );

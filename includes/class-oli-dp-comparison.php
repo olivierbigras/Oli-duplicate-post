@@ -3,6 +3,7 @@
  * Comparison screen for Rewrite & Republish.
  *
  * @package Oli_Duplicate_Post
+ * @since 1.0.0
  */
 
 // Exit if accessed directly.
@@ -11,23 +12,29 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Class Oli_DP_Comparison
+ * Side-by-side comparison of an original post and its rewrite copy.
+ *
+ * @since 1.0.0
  */
 class Oli_DP_Comparison {
 
 	/**
 	 * Initialize the class.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function init() {
 		add_action( 'admin_menu', array( __CLASS__, 'add_comparison_page' ) );
 	}
 
 	/**
-	 * Add comparison page (hidden from menu).
+	 * Add comparison page (hidden from menu, under options.php so core resolves its title).
+	 *
+	 * @since 1.0.0
 	 */
 	public static function add_comparison_page() {
 		add_submenu_page(
-			null,
+			'options.php',
 			__( 'Compare Changes', 'oli-duplicate-post' ),
 			__( 'Compare Changes', 'oli-duplicate-post' ),
 			'edit_posts',
@@ -38,16 +45,25 @@ class Oli_DP_Comparison {
 
 	/**
 	 * Render comparison page.
+	 *
+	 * @since 1.0.0
 	 */
 	public static function render_comparison_page() {
 		if ( ! current_user_can( 'edit_posts' ) ) {
 			wp_die( esc_html__( 'You do not have sufficient permissions to access this page.', 'oli-duplicate-post' ) );
 		}
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only comparison screen with GET parameters.
-		$original_id = isset( $_GET['original'] ) ? absint( $_GET['original'] ) : 0;
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only comparison screen with GET parameters.
-		$rewrite_id = isset( $_GET['rewrite'] ) ? absint( $_GET['rewrite'] ) : 0;
+		// The nonce is required and bound to both IDs, so the IDs are only trusted once it matches.
+		if ( ! isset( $_GET['_wpnonce'], $_GET['original'], $_GET['rewrite'] )
+			|| ! wp_verify_nonce(
+				sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ),
+				'oli_dp_compare_' . absint( wp_unslash( $_GET['original'] ) ) . '_' . absint( wp_unslash( $_GET['rewrite'] ) )
+			) ) {
+			wp_die( esc_html__( 'Security check failed.', 'oli-duplicate-post' ) );
+		}
+
+		$original_id = absint( wp_unslash( $_GET['original'] ) );
+		$rewrite_id  = absint( wp_unslash( $_GET['rewrite'] ) );
 
 		if ( ! $original_id || ! $rewrite_id ) {
 			wp_die( esc_html__( 'Invalid post IDs.', 'oli-duplicate-post' ) );
@@ -64,9 +80,8 @@ class Oli_DP_Comparison {
 			wp_die( esc_html__( 'Posts not found.', 'oli-duplicate-post' ) );
 		}
 
-		// Verify this is actually a rewrite relationship.
-		$stored_original = get_post_meta( $rewrite_id, '_oli_dp_original_post', true );
-		if ( absint( $stored_original ) !== $original_id ) {
+		$stored_original = absint( get_post_meta( $rewrite_id, '_oli_dp_original_post', true ) );
+		if ( $stored_original !== $original_id ) {
 			wp_die( esc_html__( 'Invalid rewrite relationship.', 'oli-duplicate-post' ) );
 		}
 
@@ -104,23 +119,21 @@ class Oli_DP_Comparison {
 						</tr>
 					</thead>
 					<tbody>
-						<?php self::render_comparison_row( 'Title', $original->post_title, $rewrite->post_title ); ?>
-						<?php self::render_comparison_row( 'Status', $original->post_status, $rewrite->post_status ); ?>
-						<?php self::render_comparison_row( 'Date', $original->post_date, $rewrite->post_date ); ?>
-						<?php self::render_comparison_row( 'Excerpt', $original->post_excerpt, $rewrite->post_excerpt ); ?>
-						<?php self::render_comparison_row( 'Content', $original->post_content, $rewrite->post_content, true ); ?>
-						
+						<?php self::render_comparison_row( __( 'Title', 'oli-duplicate-post' ), $original->post_title, $rewrite->post_title ); ?>
+						<?php self::render_comparison_row( __( 'Status', 'oli-duplicate-post' ), $original->post_status, $rewrite->post_status ); ?>
+						<?php self::render_comparison_row( __( 'Date', 'oli-duplicate-post' ), $original->post_date, $rewrite->post_date ); ?>
+						<?php self::render_comparison_row( __( 'Excerpt', 'oli-duplicate-post' ), $original->post_excerpt, $rewrite->post_excerpt ); ?>
+						<?php self::render_comparison_row( __( 'Content', 'oli-duplicate-post' ), $original->post_content, $rewrite->post_content, true ); ?>
+
 						<?php
-						// Featured image.
 						$original_thumb = get_post_thumbnail_id( $original_id );
 						$rewrite_thumb  = get_post_thumbnail_id( $rewrite_id );
 						if ( $original_thumb || $rewrite_thumb ) {
-							$original_img = $original_thumb ? wp_get_attachment_image( $original_thumb, 'thumbnail' ) : __( 'No image', 'oli-duplicate-post' );
-							$rewrite_img  = $rewrite_thumb ? wp_get_attachment_image( $rewrite_thumb, 'thumbnail' ) : __( 'No image', 'oli-duplicate-post' );
-							self::render_comparison_row( 'Featured Image', $original_img, $rewrite_img, false, true );
+							$original_img = $original_thumb ? wp_get_attachment_image( $original_thumb, 'thumbnail' ) : esc_html__( 'No image', 'oli-duplicate-post' );
+							$rewrite_img  = $rewrite_thumb ? wp_get_attachment_image( $rewrite_thumb, 'thumbnail' ) : esc_html__( 'No image', 'oli-duplicate-post' );
+							self::render_comparison_row( __( 'Featured Image', 'oli-duplicate-post' ), $original_img, $rewrite_img, false, true );
 						}
 
-						// Categories/Tags.
 						$taxonomies = get_object_taxonomies( $original->post_type, 'objects' );
 						foreach ( $taxonomies as $taxonomy ) {
 							if ( ! $taxonomy->public ) {
@@ -145,7 +158,7 @@ class Oli_DP_Comparison {
 					<a href="<?php echo esc_url( get_edit_post_link( $rewrite_id ) ); ?>" class="button button-primary button-large">
 						<?php esc_html_e( 'Continue Editing Rewrite', 'oli-duplicate-post' ); ?>
 					</a>
-					<a href="<?php echo esc_url( admin_url( 'edit.php?post_type=' . $original->post_type ) ); ?>" class="button button-large">
+					<a href="<?php echo esc_url( admin_url( 'edit.php?post_type=' . rawurlencode( $original->post_type ) ) ); ?>" class="button button-large">
 						<?php esc_html_e( 'Back to List', 'oli-duplicate-post' ); ?>
 					</a>
 				</p>
@@ -157,11 +170,13 @@ class Oli_DP_Comparison {
 	/**
 	 * Render a comparison row.
 	 *
-	 * @param string $label      Field label.
-	 * @param string $original   Original value.
-	 * @param string $rewrite    Rewrite value.
-	 * @param bool   $long_text  Whether this is long text content.
-	 * @param bool   $is_html    Whether the content contains HTML.
+	 * @since 1.0.0
+	 *
+	 * @param string $label     Field label.
+	 * @param string $original  Original value.
+	 * @param string $rewrite   Rewrite value.
+	 * @param bool   $long_text Whether this is long text content.
+	 * @param bool   $is_html   Whether the content contains HTML.
 	 */
 	private static function render_comparison_row( $label, $original, $rewrite, $long_text = false, $is_html = false ) {
 		$is_different = $original !== $rewrite;

@@ -49,6 +49,14 @@
 	margin-bottom: 0;
 }
 
+.oli-dp-rewrite-status {
+	font-weight: 600;
+}
+
+.oli-dp-prepublish-panel p {
+	margin: 0;
+}
+
 .oli-dp-comparison-wrap {
 	margin-top: 20px;
 }
