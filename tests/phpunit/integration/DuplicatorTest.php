@@ -894,6 +894,26 @@ class Oli_DP_Duplicator_Test extends WP_UnitTestCase {
 		$this->assertArrayHasKey( 'oli_dp_rewrite_republish', $actions );
 	}
 
+	public function test_uninstall_clears_scheduled_rewrite_copy_events() {
+		$args_a = array( 101 );
+		$args_b = array( 202 );
+
+		wp_schedule_single_event( time() + HOUR_IN_SECONDS, 'oli_dp_delete_rewrite_copy', $args_a );
+		wp_schedule_single_event( time() + ( 2 * HOUR_IN_SECONDS ), 'oli_dp_delete_rewrite_copy', $args_b );
+
+		$this->assertNotFalse( wp_next_scheduled( 'oli_dp_delete_rewrite_copy', $args_a ) );
+		$this->assertNotFalse( wp_next_scheduled( 'oli_dp_delete_rewrite_copy', $args_b ) );
+
+		if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
+			define( 'WP_UNINSTALL_PLUGIN', true );
+		}
+
+		require OLI_DP_PLUGIN_DIR . 'uninstall.php';
+
+		$this->assertFalse( wp_next_scheduled( 'oli_dp_delete_rewrite_copy', $args_a ) );
+		$this->assertFalse( wp_next_scheduled( 'oli_dp_delete_rewrite_copy', $args_b ) );
+	}
+
 	public function test_default_post_types_are_post_and_page() {
 		$this->register_product_post_types();
 

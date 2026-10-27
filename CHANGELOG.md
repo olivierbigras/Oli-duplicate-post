@@ -5,6 +5,11 @@ All notable changes to Oli Duplicate Post will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.9] - 2026-10-26
+
+### Fixed
+- La désinstallation déprogramme désormais les événements cron de nettoyage Rewrite & Republish
+
 ## [1.0.8] - 2026-10-26
 
 ### Changed
@@ -143,6 +148,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release of Oli Duplicate Post
 
+[1.0.9]: https://github.com/olivierbigras/Oli-duplicate-post/releases/tag/1.0.9
 [1.0.8]: https://github.com/olivierbigras/Oli-duplicate-post/releases/tag/1.0.8
 [1.0.7]: https://github.com/olivierbigras/Oli-duplicate-post/releases/tag/1.0.7
 [1.0.6]: https://github.com/olivierbigras/Oli-duplicate-post/releases/tag/1.0.6

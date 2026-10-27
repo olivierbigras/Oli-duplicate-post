@@ -573,6 +573,14 @@ if ( false !== strpos( $plugin_php, 'gmt_mysql_is_future' ) ) {
 
 ++$total_tests;
 $uninstall_php = file_get_contents( $plugin_root . '/uninstall.php' );
+if ( false !== strpos( $uninstall_php, "wp_unschedule_hook( 'oli_dp_delete_rewrite_copy' )" ) ) {
+	oli_dp_test_pass( 'Uninstall unschedules Rewrite & Republish cleanup cron events' );
+	++$passed_tests;
+} else {
+	oli_dp_test_fail( 'Uninstall does not clear oli_dp_delete_rewrite_copy cron events' );
+}
+
+++$total_tests;
 if ( false === strpos( $uninstall_php, "'_dp_original'" ) && false !== strpos( $uninstall_php, '_oli_dp_original_post' ) ) {
 	oli_dp_test_pass( 'Uninstall leaves shared _dp_original meta' );
 	++$passed_tests;

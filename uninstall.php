@@ -13,6 +13,9 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 
 delete_option( 'oli_dp_settings' );
 
+// Clear every scheduled Rewrite & Republish cleanup event, regardless of args.
+wp_unschedule_hook( 'oli_dp_delete_rewrite_copy' );
+
 global $wpdb;
 
 // Do not delete `_dp_original`: Yoast Duplicate Post uses the same key.
